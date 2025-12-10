@@ -1,0 +1,5 @@
+makehaven_tasks.settings:
+  title: 'MakeHaven Tasks'
+  description: 'Configure display code word.'
+  route_name: makehaven_tasks.settings_form
+  parent: system.admin_config_system

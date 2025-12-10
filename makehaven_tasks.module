@@ -1,0 +1,102 @@
+<?php
+
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Url;
+
+/**
+ * Implements hook_entity_insert().
+ */
+function makehaven_tasks_entity_insert(EntityInterface $entity) {
+  if ($entity->getEntityTypeId() === 'flagging' && $entity->getFlagId() === 'task_completed') {
+    _makehaven_tasks_notify_slack($entity);
+  }
+}
+
+/**
+ * Sends a Slack notification when a task is completed.
+ */
+function _makehaven_tasks_notify_slack($flagging) {
+  $node = $flagging->getFlaggable();
+  $user = $flagging->getOwner();
+
+  // Load Slack webhook URL from Slack Connector configuration.
+  $connector_config = \Drupal::config('slack_connector.settings');
+  $webhook_url = $connector_config->get('webhook_url');
+  if (empty($webhook_url)) {
+    \Drupal::logger('makehaven_tasks')->error('Slack webhook URL is not configured in Slack Connector.');
+    return;
+  }
+
+  // Default channel.
+  $default_channel = '#tasks';
+
+  // Get task title.
+  $title = $node->label();
+
+  // Generate an absolute URL for the node.
+  $node_url = Url::fromRoute('entity.node.canonical', ['node' => $node->id()], ['absolute' => TRUE])->toString();
+
+  // User name
+  $completed_by = $user->getDisplayName();
+  
+  // Try to get Slack ID for mention
+  $mention = " (by {$completed_by})";
+  if ($user->hasField('field_member_slack_id_number') && !$user->get('field_member_slack_id_number')->isEmpty()) {
+    $slack_username = $user->get('field_member_slack_id_number')->value;
+    $mention = " (by @{$slack_username})"; // Note: Slack API might need <@ID> format but simple text works often
+  }
+
+  // Build an array of channels to post to (same logic as poster)
+  $channels = [$default_channel];
+
+  // Check if the Task has a referenced "item" via field_task_equipment.
+  if ($node->hasField('field_task_equipment') && !$node->get('field_task_equipment')->isEmpty()) {
+    $item_node = $node->get('field_task_equipment')->entity;
+    if ($item_node) {
+      if ($item_node->hasField('field_item_slack_channel') && !$item_node->get('field_item_slack_channel')->isEmpty()) {
+        $channel_name = $item_node->get('field_item_slack_channel')->value;
+        $channels[] = '#' . ltrim($channel_name, '#');
+      }
+      if ($item_node->hasField('field_item_area_interest') && !$item_node->get('field_item_area_interest')->isEmpty()) {
+        $terms = $item_node->get('field_item_area_interest')->referencedEntities();
+        foreach ($terms as $term) {
+          if ($term->hasField('field_interest_slack_channel') && !$term->get('field_interest_slack_channel')->isEmpty()) {
+            $channel_name = $term->get('field_interest_slack_channel')->value;
+            $channels[] = '#' . ltrim($channel_name, '#');
+          }
+        }
+      }
+    }
+  }
+
+  $channels = array_unique($channels);
+
+  $message_text = "✅ Task Completed: '{$title}' {$mention} 
+View Task: {$node_url}";
+
+  $client = \Drupal::httpClient();
+  foreach ($channels as $channel) {
+    $data = [
+      'channel' => $channel,
+      'blocks' => [
+        [
+          'type' => 'section',
+          'text' => [
+            'type' => 'mrkdwn',
+            'text' => $message_text,
+          ],
+        ],
+      ],
+    ];
+
+    try {
+      $client->post($webhook_url, [
+        'headers' => ['Content-Type' => 'application/json'],
+        'json' => $data,
+      ]);
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('makehaven_tasks')->error('Error posting to Slack: @error', ['@error' => $e->getMessage()]);
+    }
+  }
+}

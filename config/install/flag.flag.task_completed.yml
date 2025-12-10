@@ -1,0 +1,31 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - node
+id: task_completed
+label: 'Task Completed'
+bundles:
+  - task
+entity_type: node
+global: true
+flag_short: 'Mark as Done'
+flag_long: 'Mark this task as completed'
+flag_message: 'Task marked as done'
+unflag_short: 'Re-open Task'
+unflag_long: 'Mark this task as incomplete'
+unflag_message: 'Task re-opened'
+unflag_denied_text: ''
+weight: 0
+flag_type: 'entity:node'
+link_type: ajax_link
+flagTypeConfig:
+  show_in_links:
+    full: full
+    teaser: teaser
+  show_as_field: true
+  show_on_form: false
+  show_contextual_link: false
+  extra_permissions:
+    owner: '0'
+linkTypeConfig: {  }

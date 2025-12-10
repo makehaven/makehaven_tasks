@@ -1,0 +1,9 @@
+name: 'MakeHaven Tasks'
+type: module
+description: 'Manages tasks, completion flags, and notifications.'
+core_version_requirement: ^10
+package: MakeHaven
+dependencies:
+  - flag
+  - node
+  - slack_task_poster

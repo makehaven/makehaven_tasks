@@ -1,0 +1,15 @@
+{
+  "name": "makehaven/makehaven_tasks",
+  "description": "Manages tasks, completion flags, and notifications.",
+  "type": "drupal-custom-module",
+  "license": "GPL-2.0-or-later",
+  "repositories": [
+    {
+      "type": "composer",
+      "url": "https://packages.drupal.org/8"
+    }
+  ],
+  "require": {
+    "drupal/flag": "^4.0"
+  }
+}

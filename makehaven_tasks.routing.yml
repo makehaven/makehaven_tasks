@@ -1,0 +1,23 @@
+makehaven_tasks.settings_form:
+  path: '/admin/config/makehaven/tasks-settings'
+  defaults:
+    _form: '\Drupal\makehaven_tasks\Form\TasksSettingsForm'
+    _title: 'MakeHaven Tasks Settings'
+  requirements:
+    _permission: 'administer site configuration'
+
+makehaven_tasks.display_page:
+  path: '/display/tasks/{code_word}'
+  defaults:
+    _controller: '\Drupal\makehaven_tasks\Controller\TasksDisplayController::displayPage'
+    _title: 'Tasks Display'
+  requirements:
+    _access: 'TRUE'
+
+makehaven_tasks.display_fragment:
+  path: '/display/tasks/fragment/{code_word}'
+  defaults:
+    _controller: '\Drupal\makehaven_tasks\Controller\TasksDisplayController::displayFragment'
+    _title: 'Tasks Display Fragment'
+  requirements:
+    _access: 'TRUE'
