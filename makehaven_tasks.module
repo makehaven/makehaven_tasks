@@ -43,7 +43,7 @@ function _makehaven_tasks_notify_slack($flagging) {
   $mention = " (by {$completed_by})";
   if ($user->hasField('field_member_slack_id_number') && !$user->get('field_member_slack_id_number')->isEmpty()) {
     $slack_username = $user->get('field_member_slack_id_number')->value;
-    $mention = " (by @{$slack_username})"; // Note: Slack API might need <@ID> format but simple text works often
+    $mention = " (by <@{$slack_username}>)"; // Note: Slack API might need <@ID> format but simple text works often
   }
 
   // Build an array of channels to post to (same logic as poster)
@@ -94,6 +94,7 @@ View Task: {$node_url}";
         'headers' => ['Content-Type' => 'application/json'],
         'json' => $data,
       ]);
+      \Drupal::logger('makehaven_tasks')->notice('Slack notification sent to @channel for task completion.', ['@channel' => $channel]);
     }
     catch (\Exception $e) {
       \Drupal::logger('makehaven_tasks')->error('Error posting to Slack: @error', ['@error' => $e->getMessage()]);

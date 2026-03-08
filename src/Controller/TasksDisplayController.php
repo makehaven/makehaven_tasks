@@ -30,84 +30,151 @@ class TasksDisplayController extends ControllerBase {
     $css = "
       body {
         margin: 0;
-        padding: 20px;
-        background-color: #121212;
-        color: #e0e0e0;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        overflow: hidden; /* Hide scrollbars for clean display */
+        padding: 0;
+        background-color: #0a0a0a;
+        color: #f0f0f0;
+        font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        overflow: hidden;
       }
       #tasks-container {
         height: 100vh;
         display: flex;
         flex-direction: column;
+        padding: 30px;
+        box-sizing: border-box;
       }
       
-      /* View specific overrides */
       .view-tasks {
         width: 100%;
       }
       
-      /* Headers */
-      h1, h2, h3 {
-        color: #ffffff;
-        margin-top: 0;
+      /* Main Task List */
+      .view-display-id-page_tasks_display .view-content {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+        gap: 20px;
+        margin-bottom: 30px;
       }
       
-      /* Task List Styles */
-      .views-row {
-        background-color: #1e1e1e;
+      .view-display-id-page_tasks_display .views-row {
+        background: linear-gradient(145deg, #1e1e1e, #161616);
         border: 1px solid #333;
-        border-radius: 8px;
+        border-radius: 12px;
+        padding: 25px;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.5);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        position: relative;
+        overflow: hidden;
+      }
+      
+      .view-display-id-page_tasks_display .views-row::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 4px;
+        height: 100%;
+        background-color: #2196f3;
+      }
+      
+      .view-display-id-page_tasks_display .views-field-title {
+        font-size: 2.2rem;
+        font-weight: 800;
+        color: #fff;
+        line-height: 1.2;
         margin-bottom: 15px;
-        padding: 20px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
       }
       
-      .views-field-title {
-        font-size: 1.8rem;
-        font-weight: bold;
-        color: #90caf9;
-        margin-bottom: 10px;
+      .view-display-id-page_tasks_display .views-field-field-task-equipment {
+        font-size: 1.1rem;
+        color: #aaa;
+        font-style: italic;
       }
       
-      .views-field-body {
-        font-size: 1.2rem;
-        color: #b0bec5;
-        line-height: 1.5;
-      }
-      
-      /* Priorities */
-      .views-field-field-task-priority .field-content {
-        display: inline-block;
-        padding: 4px 10px;
-        border-radius: 4px;
-        font-weight: bold;
-        text-transform: uppercase;
+      .badge {
         font-size: 0.9rem;
+        padding: 6px 12px;
+        border-radius: 20px;
+        background-color: #333;
+        color: #fff;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-top: 10px;
+        display: inline-block;
       }
       
-      /* Custom badge colors could be added here if classes exist */
-      
-      /* Footer / Recently Completed */
+      /* Recently Completed Section */
       .attachment-after {
-        margin-top: 40px;
-        border-top: 2px solid #444;
-        padding-top: 20px;
+        margin-top: auto;
+        padding-top: 30px;
+        border-top: 1px solid #333;
       }
       
-      .attachment-after h2 {
-        color: #81c784; /* Green for completed */
+      .attachment-after::before {
+        content: 'Recently Completed';
+        display: block;
+        font-size: 1.8rem;
+        font-weight: 700;
+        color: #4caf50;
+        margin-bottom: 20px;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+      }
+      
+      .view-display-id-attachment_recently_completed .view-content {
+        display: flex;
+        flex-direction: row;
+        gap: 20px;
+        overflow-x: auto;
+      }
+      
+      .view-display-id-attachment_recently_completed .views-row {
+        background-color: #161616;
+        border: 1px solid #222;
+        border-radius: 10px;
+        padding: 15px;
+        min-width: 250px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+      }
+      
+      .profile-photo img {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 2px solid #4caf50;
+      }
+      
+      .view-display-id-attachment_recently_completed .views-field-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #eee;
+      }
+      
+      .view-display-id-attachment_recently_completed .views-field-uid {
+        font-size: 0.9rem;
+        color: #888;
+      }
+
+      /* Pager - Hide on signage */
+      .pager, .pagination {
+        display: none !important;
       }
 
       /* Loading indicator */
       #loading {
         position: fixed;
-        top: 20px;
+        bottom: 20px;
         right: 20px;
-        color: #666;
-        font-size: 0.8rem;
+        color: #444;
+        font-size: 0.7rem;
         opacity: 0;
         transition: opacity 0.5s;
+        z-index: 100;
       }
       #loading.active {
         opacity: 1;
@@ -186,11 +253,22 @@ HTML;
       return new Response('View not found.', 404);
     }
 
-    $view->setDisplay('page_tasks_display');
-    $render_array = $view->render();
-    
-    // Render the render array to HTML string
-    $html = \Drupal::service('renderer')->renderRoot($render_array);
+    // Switch to admin account to ensure all data (like photos) is visible.
+    $accountSwitcher = \Drupal::service('account_switcher');
+    $admin_user = \Drupal\user\Entity\User::load(1);
+    $accountSwitcher->switchTo($admin_user);
+
+    try {
+      $view->setDisplay('page_tasks_display');
+      $render_array = $view->render();
+      
+      // Render the render array to HTML string
+      $html = \Drupal::service('renderer')->renderRoot($render_array);
+    }
+    finally {
+      // Always switch back.
+      $accountSwitcher->switchBack();
+    }
 
     return new Response($html);
   }
