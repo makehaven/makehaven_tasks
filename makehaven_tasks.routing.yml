@@ -21,3 +21,19 @@ makehaven_tasks.display_fragment:
     _title: 'Tasks Display Fragment'
   requirements:
     _access: 'TRUE'
+
+makehaven_tasks.dashboard:
+  path: '/tasks/dashboard'
+  defaults:
+    _controller: '\Drupal\makehaven_tasks\Controller\TaskDashboardController::content'
+    _title: 'Task Dashboard'
+  requirements:
+    _permission: 'access content'
+
+makehaven_tasks.series_admin:
+  path: '/admin/content/tasks/recurring'
+  defaults:
+    _controller: '\Drupal\makehaven_tasks\Controller\TaskSeriesAdminController::content'
+    _title: 'Recurring Task Series'
+  requirements:
+    _permission: 'edit any task content'

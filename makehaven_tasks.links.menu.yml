@@ -3,3 +3,15 @@ makehaven_tasks.settings:
   description: 'Configure display code word.'
   route_name: makehaven_tasks.settings_form
   parent: system.admin_config_system
+
+makehaven_tasks.dashboard:
+  title: 'Task Dashboard'
+  description: 'Browse volunteer, badge-qualified, and staff tasks.'
+  route_name: makehaven_tasks.dashboard
+  menu_name: main
+
+makehaven_tasks.series_admin:
+  title: 'Recurring Task Series'
+  description: 'Manage recurring task sources and current occurrences.'
+  route_name: makehaven_tasks.series_admin
+  parent: system.admin_content

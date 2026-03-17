@@ -1,7 +1,10 @@
 <?php
 
+use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Url;
+use Drupal\node\NodeInterface;
 
 /**
  * Implements hook_entity_insert().
@@ -9,7 +12,98 @@ use Drupal\Core\Url;
 function makehaven_tasks_entity_insert(EntityInterface $entity) {
   if ($entity->getEntityTypeId() === 'flagging' && $entity->getFlagId() === 'task_completed') {
     _makehaven_tasks_notify_slack($entity);
+    _makehaven_tasks_schedule_next_occurrence($entity);
   }
+}
+
+/**
+ * Implements hook_entity_view().
+ */
+function makehaven_tasks_entity_view(array &$build, EntityInterface $entity, \Drupal\Core\Entity\Display\EntityViewDisplayInterface $display, $view_mode) {
+  if (!$entity instanceof NodeInterface || $entity->bundle() !== 'task' || $view_mode !== 'default') {
+    return;
+  }
+
+  $build['#attached']['library'][] = 'makehaven_tasks/dashboard';
+
+  $buttons = [
+    '#type' => 'container',
+    '#attributes' => ['class' => ['makehaven-task-actions__buttons']],
+    'open' => [
+      '#type' => 'link',
+      '#title' => t('Open full task page'),
+      '#url' => $entity->toUrl(),
+      '#options' => ['attributes' => ['class' => ['button']]],
+    ],
+  ];
+
+  if (\Drupal::currentUser()->isAuthenticated()) {
+    $buttons['complete'] = \Drupal::service('flag.link_builder')->build('node', (int) $entity->id(), 'task_completed', 'full');
+  }
+  else {
+    $buttons['login'] = [
+      '#type' => 'link',
+      '#title' => t('Log in to mark done'),
+      '#url' => Url::fromRoute('user.login'),
+      '#options' => ['attributes' => ['class' => ['button']]],
+    ];
+  }
+
+  $instructions = t('Read the instructions, do the work safely, leave a comment if context would help the next person, then mark the task done here.');
+  if ($entity->hasField('field_task_required_badge') && !$entity->get('field_task_required_badge')->isEmpty()) {
+    $badge = $entity->get('field_task_required_badge')->entity;
+    if ($badge) {
+      $instructions = t('This task requires the %badge badge. If you are qualified, do the work safely and then mark the task done here.', ['%badge' => $badge->label()]);
+    }
+  }
+
+  $series_source = _makehaven_tasks_get_series_source($entity);
+  $is_recurring = $series_source->hasField('field_task_frequency')
+    && !$series_source->get('field_task_frequency')->isEmpty()
+    && !in_array((string) $series_source->get('field_task_frequency')->value, ['once', 'occasional', 'archive'], TRUE);
+
+  if ($is_recurring) {
+    $buttons['defer'] = [
+      '#type' => 'link',
+      '#title' => t('Defer this occurrence'),
+      '#url' => $entity->toUrl('edit-form'),
+      '#options' => ['attributes' => ['class' => ['button']]],
+    ];
+
+    if ((int) $series_source->id() !== (int) $entity->id()) {
+      $buttons['series'] = [
+        '#type' => 'link',
+        '#title' => t('Manage recurring series'),
+        '#url' => $series_source->toUrl('edit-form'),
+        '#options' => ['attributes' => ['class' => ['button']]],
+      ];
+      $instructions = t('This task is one occurrence in a recurring series. To defer just this copy, edit this task and move Next due later. To pause or stop future copies, open Manage recurring series.');
+    }
+    else {
+      $buttons['series'] = [
+        '#type' => 'link',
+        '#title' => t('Manage recurring series'),
+        '#url' => $entity->toUrl('edit-form'),
+        '#options' => ['attributes' => ['class' => ['button']]],
+      ];
+      $instructions = t('This task is the source for a recurring series. To stop future copies, pause the series or change the frequency. To defer the current copy, move Next due later and unpublish it.');
+    }
+  }
+
+  $build['makehaven_task_actions'] = [
+    '#type' => 'container',
+    '#attributes' => ['class' => ['makehaven-task-actions']],
+    '#weight' => -20,
+    'title' => [
+      '#type' => 'html_tag',
+      '#tag' => 'h2',
+      '#value' => t('What You Can Do'),
+    ],
+    'help' => [
+      '#markup' => '<p>' . $instructions . '</p>',
+    ],
+    'buttons' => $buttons,
+  ];
 }
 
 /**
@@ -100,4 +194,229 @@ View Task: {$node_url}";
       \Drupal::logger('makehaven_tasks')->error('Error posting to Slack: @error', ['@error' => $e->getMessage()]);
     }
   }
+}
+
+/**
+ * Implements hook_cron().
+ */
+function makehaven_tasks_cron() {
+  $storage = \Drupal::entityTypeManager()->getStorage('node');
+  $query = $storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', 'task')
+    ->condition('status', 0)
+    ->exists('field_task_next_due')
+    ->condition('field_task_next_due.value', gmdate('Y-m-d\TH:i:s'), '<=');
+
+  $nids = $query->execute();
+  if (!$nids) {
+    return;
+  }
+
+  $tasks = $storage->loadMultiple($nids);
+  foreach ($tasks as $task) {
+    $task->setPublished(TRUE);
+    $task->save();
+
+    if (function_exists('slack_task_poster_send_message')) {
+      slack_task_poster_send_message($task);
+    }
+  }
+}
+
+/**
+ * Implements hook_node_access().
+ */
+function makehaven_tasks_node_access(NodeInterface $node, $op, AccountInterface $account) {
+  if ($op !== 'view' || $node->bundle() !== 'task') {
+    return AccessResult::neutral();
+  }
+
+  if (_makehaven_tasks_is_task_staff($account)) {
+    return AccessResult::neutral();
+  }
+
+  $audience = _makehaven_tasks_get_task_audience($node);
+  if ($audience === 'staff_only') {
+    return AccessResult::forbidden()
+      ->addCacheableDependency($node)
+      ->cachePerPermissions();
+  }
+
+  if ($audience === 'badge_holders' && !_makehaven_tasks_user_meets_task_badge_requirement($node, $account)) {
+    return AccessResult::forbidden()
+      ->addCacheableDependency($node)
+      ->cachePerUser();
+  }
+
+  return AccessResult::neutral();
+}
+
+/**
+ * Returns TRUE when the account should be treated as task staff.
+ */
+function _makehaven_tasks_is_task_staff(AccountInterface $account): bool {
+  return $account->hasPermission('edit any task content') || $account->hasPermission('administer nodes');
+}
+
+/**
+ * Returns the normalized audience for a task.
+ */
+function _makehaven_tasks_get_task_audience(NodeInterface $task): string {
+  if ($task->hasField('field_task_audience') && !$task->get('field_task_audience')->isEmpty()) {
+    return (string) $task->get('field_task_audience')->value;
+  }
+
+  if ($task->hasField('field_task_required_badge') && !$task->get('field_task_required_badge')->isEmpty()) {
+    return 'badge_holders';
+  }
+
+  return 'open_member';
+}
+
+/**
+ * Returns TRUE when the account meets the task's badge requirement.
+ */
+function _makehaven_tasks_user_meets_task_badge_requirement(NodeInterface $task, AccountInterface $account): bool {
+  if ($account->isAnonymous()) {
+    return FALSE;
+  }
+
+  if (_makehaven_tasks_is_task_staff($account)) {
+    return TRUE;
+  }
+
+  if (!$task->hasField('field_task_required_badge') || $task->get('field_task_required_badge')->isEmpty()) {
+    return TRUE;
+  }
+
+  if (!\Drupal::hasService('appointment_facilitator.badge_gate')) {
+    return FALSE;
+  }
+
+  $badge = $task->get('field_task_required_badge')->entity;
+  if (!$badge) {
+    return FALSE;
+  }
+
+  $gate = \Drupal::service('appointment_facilitator.badge_gate');
+  return $gate->memberHasActiveOrBlankBadge((int) $account->id(), (int) $badge->id());
+}
+
+/**
+ * Returns a field label when possible.
+ */
+function _makehaven_tasks_field_label_or_fallback(NodeInterface $task, string $field_name): string {
+  if (!$task->hasField($field_name) || $task->get($field_name)->isEmpty()) {
+    return 'None';
+  }
+
+  $value = $task->get($field_name)->value ?? NULL;
+  $definition = $task->get($field_name)->getFieldDefinition();
+  $allowed_values = $definition->getSetting('allowed_values');
+  if (is_array($allowed_values) && $value !== NULL && isset($allowed_values[$value])) {
+    return (string) $allowed_values[$value];
+  }
+
+  $item = $task->get($field_name)->first();
+  if ($item && method_exists($item, 'getString')) {
+    $string = trim($item->getString());
+    if ($string !== '') {
+      return $string;
+    }
+  }
+
+  return 'Set';
+}
+
+/**
+ * Creates the next recurring task occurrence after completion.
+ */
+function _makehaven_tasks_schedule_next_occurrence($flagging): void {
+  $node = $flagging->getFlaggable();
+  if (!$node instanceof NodeInterface || $node->bundle() !== 'task') {
+    return;
+  }
+
+  $series_source = _makehaven_tasks_get_series_source($node);
+  if ($series_source->hasField('field_task_series_paused') && (bool) $series_source->get('field_task_series_paused')->value) {
+    return;
+  }
+
+  if (!$series_source->hasField('field_task_frequency') || $series_source->get('field_task_frequency')->isEmpty()) {
+    return;
+  }
+
+  $frequency = (string) $series_source->get('field_task_frequency')->value;
+  $next_due = _makehaven_tasks_calculate_next_due($frequency);
+  if ($next_due === NULL) {
+    return;
+  }
+
+  $duplicate = $series_source->createDuplicate();
+  $duplicate->setNewRevision(FALSE);
+  $duplicate->setCreatedTime(\Drupal::time()->getCurrentTime());
+
+  if ($duplicate->hasField('field_task_next_due')) {
+    $duplicate->set('field_task_next_due', $next_due);
+  }
+
+  if ($duplicate->hasField('field_task_series_source')) {
+    $duplicate->set('field_task_series_source', (int) $series_source->id());
+  }
+
+  if ($duplicate->hasField('field_task_series_paused')) {
+    $duplicate->set('field_task_series_paused', 0);
+  }
+
+  if ($duplicate->hasField('path')) {
+    $duplicate->set('path', ['pathauto' => 1]);
+  }
+
+  $publish_now = $frequency === 'always';
+  $duplicate->setPublished($publish_now);
+  $duplicate->save();
+
+  if ($publish_now && function_exists('slack_task_poster_send_message')) {
+    slack_task_poster_send_message($duplicate);
+  }
+}
+
+/**
+ * Calculates the next due date for a recurring task.
+ */
+function _makehaven_tasks_calculate_next_due(string $frequency): ?string {
+  $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+
+  $next = match ($frequency) {
+    'always' => $now,
+    'weekly' => $now->modify('+1 week'),
+    'monthly' => $now->modify('+1 month'),
+    'quarterly' => $now->modify('+3 months'),
+    'yearly' => $now->modify('+1 year'),
+    default => NULL,
+  };
+
+  return $next?->format('Y-m-d\TH:i:s');
+}
+
+/**
+ * Returns TRUE when a frequency should behave as a recurring series.
+ */
+function _makehaven_tasks_is_recurring_frequency(string $frequency): bool {
+  return in_array($frequency, ['always', 'weekly', 'monthly', 'quarterly', 'yearly'], TRUE);
+}
+
+/**
+ * Returns the recurring series source task for an occurrence.
+ */
+function _makehaven_tasks_get_series_source(NodeInterface $task): NodeInterface {
+  if ($task->hasField('field_task_series_source') && !$task->get('field_task_series_source')->isEmpty()) {
+    $source = $task->get('field_task_series_source')->entity;
+    if ($source instanceof NodeInterface) {
+      return $source;
+    }
+  }
+
+  return $task;
 }

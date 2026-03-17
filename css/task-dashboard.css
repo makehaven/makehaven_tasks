@@ -1,0 +1,207 @@
+.task-dashboard {
+  --task-bg: #f7f1e5;
+  --task-card: #fffdf8;
+  --task-border: #d6c3a1;
+  --task-ink: #2c2418;
+  --task-muted: #6f634f;
+  --task-accent: #b45309;
+  --task-good: #166534;
+  --task-warn: #92400e;
+  --task-danger: #991b1b;
+  background:
+    radial-gradient(circle at top left, rgba(180, 83, 9, 0.08), transparent 32%),
+    linear-gradient(180deg, #fbf7ef 0%, var(--task-bg) 100%);
+  color: var(--task-ink);
+  padding: 1.5rem;
+  border-radius: 18px;
+}
+
+.task-dashboard__intro {
+  max-width: 60rem;
+  margin-bottom: 1.5rem;
+}
+
+.task-dashboard__intro h1 {
+  margin: 0 0 0.4rem;
+  font-size: 2rem;
+  line-height: 1.1;
+}
+
+.task-dashboard__intro p {
+  margin: 0;
+  color: var(--task-muted);
+  font-size: 1rem;
+}
+
+.task-dashboard__sections {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.task-dashboard__section {
+  background: var(--task-card);
+  border: 1px solid var(--task-border);
+  border-radius: 16px;
+  padding: 1rem;
+  box-shadow: 0 12px 24px rgba(44, 36, 24, 0.06);
+}
+
+.task-dashboard__section h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.25rem;
+}
+
+.task-dashboard__section p {
+  margin: 0 0 1rem;
+  color: var(--task-muted);
+}
+
+.task-dashboard__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.9rem;
+}
+
+.task-card {
+  background: #fff;
+  border: 1px solid #eadfcf;
+  border-radius: 14px;
+  padding: 0.95rem;
+}
+
+.task-card__title {
+  margin: 0 0 0.45rem;
+  font-size: 1.05rem;
+  line-height: 1.25;
+}
+
+.task-card__title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.task-card__title a:hover,
+.task-card__title a:focus {
+  text-decoration: underline;
+}
+
+.task-card__summary {
+  margin: 0 0 0.75rem;
+  color: var(--task-muted);
+  font-size: 0.96rem;
+}
+
+.task-card__meta {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+}
+
+.task-card__actions,
+.makehaven-task-actions__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 0.9rem;
+}
+
+.task-card__actions .button,
+.makehaven-task-actions__buttons .button,
+.task-card__actions .flag a,
+.makehaven-task-actions__buttons .flag a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.4rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid #caa772;
+  background: #fff7ed;
+  color: #7c2d12;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.task-card__actions .flag a:hover,
+.task-card__actions .flag a:focus,
+.makehaven-task-actions__buttons .flag a:hover,
+.makehaven-task-actions__buttons .flag a:focus,
+.task-card__actions .button:hover,
+.task-card__actions .button:focus,
+.makehaven-task-actions__buttons .button:hover,
+.makehaven-task-actions__buttons .button:focus {
+  background: #ffedd5;
+}
+
+.makehaven-task-actions {
+  margin: 0 0 1rem;
+  padding: 1rem;
+  border: 1px solid #d6c3a1;
+  border-radius: 14px;
+  background: #fff8ef;
+}
+
+.makehaven-task-actions h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+}
+
+.makehaven-task-actions p {
+  margin: 0;
+  color: #6f634f;
+}
+
+.task-card__meta span strong {
+  color: var(--task-ink);
+}
+
+.task-card--qualified {
+  border-left: 5px solid var(--task-good);
+}
+
+.task-card--member {
+  border-left: 5px solid var(--task-accent);
+}
+
+.task-card--locked {
+  border-left: 5px solid var(--task-warn);
+}
+
+.task-card--staff {
+  border-left: 5px solid var(--task-danger);
+}
+
+.task-dashboard__recognition {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.task-dashboard__recognition li {
+  background: #fff;
+  border: 1px solid #eadfcf;
+  border-radius: 12px;
+  padding: 0.85rem 0.95rem;
+}
+
+.task-dashboard__empty {
+  margin: 0;
+  padding: 0.8rem 0.9rem;
+  background: #fff;
+  border: 1px dashed var(--task-border);
+  border-radius: 12px;
+  color: var(--task-muted);
+}
+
+@media (max-width: 700px) {
+  .task-dashboard {
+    padding: 1rem;
+    border-radius: 12px;
+  }
+
+  .task-dashboard__intro h1 {
+    font-size: 1.6rem;
+  }
+}
