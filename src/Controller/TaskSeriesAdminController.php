@@ -53,12 +53,12 @@ class TaskSeriesAdminController extends ControllerBase {
       $current = $occurrences ? reset($occurrences) : NULL;
 
       $rows[] = [
-        'series' => Link::fromTextAndUrl($source->label(), $source->toUrl())->toString(),
+        'series' => ['data' => Link::fromTextAndUrl($source->label(), $source->toUrl())->toRenderable()],
         'frequency' => _makehaven_tasks_field_label_or_fallback($source, 'field_task_frequency'),
         'paused' => $this->formatPaused($source),
         'next_due' => $this->formatNextDue($source),
         'open_occurrences' => (string) count($occurrences),
-        'current_occurrence' => $current ? Link::fromTextAndUrl($current->label(), $current->toUrl())->toString() : $this->t('None'),
+        'current_occurrence' => $current ? ['data' => Link::fromTextAndUrl($current->label(), $current->toUrl())->toRenderable()] : (string) $this->t('None'),
         'actions' => $this->buildActionLinks($source, $current),
       ];
     }
@@ -229,7 +229,7 @@ class TaskSeriesAdminController extends ControllerBase {
   /**
    * Builds admin action links.
    */
-  protected function buildActionLinks(NodeInterface $source, ?NodeInterface $current): string {
+  protected function buildActionLinks(NodeInterface $source, ?NodeInterface $current): array {
     $links = [];
     $links[] = Link::fromTextAndUrl($this->t('Manage series'), $source->toUrl('edit-form'))->toString();
     if ($current) {
@@ -237,7 +237,7 @@ class TaskSeriesAdminController extends ControllerBase {
     }
     $links[] = Link::fromTextAndUrl($this->t('View series source'), $source->toUrl())->toString();
 
-    return implode(' | ', $links);
+    return ['data' => ['#markup' => implode(' | ', $links)]];
   }
 
 }
