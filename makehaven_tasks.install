@@ -19,11 +19,11 @@ function makehaven_tasks_update_10001(): void {
       'type' => 'list_string',
       'settings' => [
         'allowed_values' => [
-          ['value' => 'cleaning', 'label' => 'Cleaning'],
-          ['value' => 'maintenance', 'label' => 'Maintenance'],
-          ['value' => 'inspection', 'label' => 'Inspection'],
-          ['value' => 'restocking', 'label' => 'Restocking'],
-          ['value' => 'other', 'label' => 'Other'],
+          'cleaning' => 'Cleaning',
+          'maintenance' => 'Maintenance',
+          'inspection' => 'Inspection',
+          'restocking' => 'Restocking',
+          'other' => 'Other',
         ],
       ],
       'cardinality' => 1,
@@ -138,20 +138,18 @@ function makehaven_tasks_update_10003(): void {
     return;
   }
 
+  // allowed_values is stored as a flat key => label array.
   $allowed_values = $storage->getSetting('allowed_values');
-  foreach ($allowed_values as $item) {
-    if ($item['value'] === 'biennial') {
-      // Already exists.
-      return;
-    }
+  if (isset($allowed_values['biennial'])) {
+    return;
   }
 
-  // Insert 'biennial' between 'yearly' and 'occasional'.
+  // Insert 'biennial' after 'yearly'.
   $new_values = [];
-  foreach ($allowed_values as $item) {
-    $new_values[] = $item;
-    if ($item['value'] === 'yearly') {
-      $new_values[] = ['value' => 'biennial', 'label' => 'Every 2 years'];
+  foreach ($allowed_values as $value => $label) {
+    $new_values[$value] = $label;
+    if ($value === 'yearly') {
+      $new_values['biennial'] = 'Every 2 years';
     }
   }
 
