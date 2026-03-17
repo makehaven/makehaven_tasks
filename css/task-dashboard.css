@@ -205,3 +205,66 @@
     font-size: 1.6rem;
   }
 }
+
+/* ── Phase 2: task status notices ────────────────────────────── */
+
+.task-status-notice {
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.95rem;
+}
+
+.task-status-notice--in-progress {
+  background: #fef9c3;
+  border: 1px solid #ca8a04;
+  color: #713f12;
+}
+
+.task-status-notice--incomplete {
+  background: #fff7ed;
+  border: 1px solid #ea580c;
+  color: #7c2d12;
+}
+
+.task-status-notice__note {
+  margin-top: 0.4rem;
+  font-style: italic;
+}
+
+/* ── Phase 2: "More options" details element ─────────────────── */
+
+.task-actions__more {
+  margin-top: 0.75rem;
+  border: 1px solid #d6c3a1;
+  border-radius: 10px;
+  padding: 0.5rem 0.75rem;
+}
+
+.task-actions__more summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #6f634f;
+  list-style: none;
+}
+
+.task-actions__more summary::-webkit-details-marker {
+  display: none;
+}
+
+.task-actions__more[open] summary {
+  margin-bottom: 0.6rem;
+}
+
+.task-actions__more-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* ── Phase 2: incomplete task card ───────────────────────────── */
+
+.task-card--incomplete {
+  border-left: 5px solid #ea580c;
+}

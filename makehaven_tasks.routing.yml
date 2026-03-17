@@ -37,3 +37,22 @@ makehaven_tasks.series_admin:
     _title: 'Recurring Task Series'
   requirements:
     _permission: 'edit any task content'
+
+makehaven_tasks.claim:
+  path: '/tasks/{node}/claim'
+  defaults:
+    _controller: '\Drupal\makehaven_tasks\Controller\TaskStatusController::claim'
+    _title: 'Claim Task'
+  requirements:
+    _permission: 'access content'
+    _csrf_token: 'TRUE'
+    node: \d+
+
+makehaven_tasks.handoff:
+  path: '/tasks/{node}/handoff'
+  defaults:
+    _form: '\Drupal\makehaven_tasks\Form\TaskHandoffForm'
+    _title: 'Hand Off Task'
+  requirements:
+    _permission: 'access content'
+    node: \d+

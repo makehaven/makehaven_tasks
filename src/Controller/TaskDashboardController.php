@@ -66,6 +66,11 @@ class TaskDashboardController extends ControllerBase {
       ],
     ];
 
+    // Incomplete tasks appear first — they need pickup.
+    if (!empty($buckets['incomplete'])) {
+      $build['sections']['incomplete'] = $this->buildIncompleteSection($buckets['incomplete']);
+    }
+
     $build['sections']['assigned'] = $this->buildSection(
       $this->t('Assigned To Me'),
       $this->t('Tasks assigned directly to you or one of your groups.'),
@@ -115,6 +120,25 @@ class TaskDashboardController extends ControllerBase {
     ];
 
     return $build;
+  }
+
+  /**
+   * Builds the "Needs Help — Incomplete Tasks" section.
+   */
+  protected function buildIncompleteSection(array $tasks): array {
+    return [
+      '#type' => 'container',
+      '#attributes' => ['class' => ['task-dashboard__section', 'task-dashboard__section--incomplete']],
+      'title' => [
+        '#type' => 'html_tag',
+        '#tag' => 'h2',
+        '#value' => $this->t('Needs Help — Incomplete Tasks'),
+      ],
+      'description' => [
+        '#markup' => '<p>' . Html::escape((string) $this->t('These tasks were started but not finished. Pick one up if you can.')) . '</p>',
+      ],
+      'content' => $this->buildTaskCards($tasks, (string) $this->t('No incomplete tasks right now.')),
+    ];
   }
 
   /**
@@ -228,6 +252,7 @@ class TaskDashboardController extends ControllerBase {
    */
   protected function loadOpenTaskBuckets(int $scanLimit): array {
     $buckets = [
+      'incomplete' => [],
       'assigned' => [],
       'member' => [],
       'qualified' => [],
@@ -256,9 +281,20 @@ class TaskDashboardController extends ControllerBase {
     $completed = $this->loadCompletedTaskIds($nids);
     $tasks = $storage->loadMultiple($nids);
 
+    $has_status_field = $this->taskFieldExists('field_task_status');
+
     foreach ($tasks as $task) {
       $nid = (int) $task->id();
       if (isset($completed[$nid])) {
+        continue;
+      }
+
+      // Incomplete tasks get their own bucket regardless of audience/assignment.
+      if ($has_status_field
+        && $task->hasField('field_task_status')
+        && (string) $task->get('field_task_status')->value === 'incomplete'
+      ) {
+        $buckets['incomplete'][] = $this->buildTaskRow($task, 'incomplete');
         continue;
       }
 

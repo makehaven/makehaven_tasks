@@ -26,18 +26,62 @@ function makehaven_tasks_entity_view(array &$build, EntityInterface $entity, \Dr
 
   $build['#attached']['library'][] = 'makehaven_tasks/dashboard';
 
+  // Read status fields.
+  $task_status = 'open';
+  if ($entity->hasField('field_task_status') && !$entity->get('field_task_status')->isEmpty()) {
+    $task_status = (string) $entity->get('field_task_status')->value;
+  }
+
+  $claimed_by_name = '';
+  if ($entity->hasField('field_task_claimed_by') && !$entity->get('field_task_claimed_by')->isEmpty()) {
+    $claimed_user = $entity->get('field_task_claimed_by')->entity;
+    if ($claimed_user) {
+      $claimed_by_name = $claimed_user->getDisplayName();
+    }
+  }
+
+  $handoff_note_text = '';
+  if ($entity->hasField('field_task_handoff_note') && !$entity->get('field_task_handoff_note')->isEmpty()) {
+    $handoff_note_text = (string) $entity->get('field_task_handoff_note')->value;
+  }
+
+  // Build status notice.
+  $status_notice = [];
+  if ($task_status === 'in_progress' && $claimed_by_name !== '') {
+    $status_notice = [
+      '#type' => 'html_tag',
+      '#tag' => 'div',
+      '#attributes' => ['class' => ['task-status-notice', 'task-status-notice--in-progress']],
+      '#value' => '⚙ ' . \Drupal\Component\Utility\Html::escape($claimed_by_name) . ' is working on this.',
+    ];
+  }
+  elseif ($task_status === 'incomplete') {
+    $notice_inner = '';
+    if ($claimed_by_name !== '') {
+      $notice_inner .= '⚠ ' . \Drupal\Component\Utility\Html::escape($claimed_by_name) . ' started this but couldn\'t finish.';
+    }
+    else {
+      $notice_inner .= '⚠ Someone started this but couldn\'t finish.';
+    }
+    if ($handoff_note_text !== '') {
+      $notice_inner .= '<div class="task-status-notice__note">' . nl2br(\Drupal\Component\Utility\Html::escape($handoff_note_text)) . '</div>';
+    }
+    $status_notice = [
+      '#type' => 'html_tag',
+      '#tag' => 'div',
+      '#attributes' => ['class' => ['task-status-notice', 'task-status-notice--incomplete']],
+      '#value' => $notice_inner,
+    ];
+  }
+
+  // Build primary buttons container.
+  $current_user = \Drupal::currentUser();
   $buttons = [
     '#type' => 'container',
     '#attributes' => ['class' => ['makehaven-task-actions__buttons']],
-    'open' => [
-      '#type' => 'link',
-      '#title' => t('Open full task page'),
-      '#url' => $entity->toUrl(),
-      '#options' => ['attributes' => ['class' => ['button']]],
-    ],
   ];
 
-  if (\Drupal::currentUser()->isAuthenticated()) {
+  if ($current_user->isAuthenticated()) {
     $buttons['complete'] = \Drupal::service('flag.link_builder')->build('node', (int) $entity->id(), 'task_completed', 'full');
   }
   else {
@@ -49,6 +93,7 @@ function makehaven_tasks_entity_view(array &$build, EntityInterface $entity, \Dr
     ];
   }
 
+  // Build instructions and recurring-series buttons.
   $instructions = t('Read the instructions, do the work safely, leave a comment if context would help the next person, then mark the task done here.');
   if ($entity->hasField('field_task_required_badge') && !$entity->get('field_task_required_badge')->isEmpty()) {
     $badge = $entity->get('field_task_required_badge')->entity;
@@ -62,8 +107,9 @@ function makehaven_tasks_entity_view(array &$build, EntityInterface $entity, \Dr
     && !$series_source->get('field_task_frequency')->isEmpty()
     && !in_array((string) $series_source->get('field_task_frequency')->value, ['once', 'occasional', 'archive'], TRUE);
 
+  $series_buttons = [];
   if ($is_recurring) {
-    $buttons['defer'] = [
+    $series_buttons['defer'] = [
       '#type' => 'link',
       '#title' => t('Defer this occurrence'),
       '#url' => $entity->toUrl('edit-form'),
@@ -71,7 +117,7 @@ function makehaven_tasks_entity_view(array &$build, EntityInterface $entity, \Dr
     ];
 
     if ((int) $series_source->id() !== (int) $entity->id()) {
-      $buttons['series'] = [
+      $series_buttons['series'] = [
         '#type' => 'link',
         '#title' => t('Manage recurring series'),
         '#url' => $series_source->toUrl('edit-form'),
@@ -80,7 +126,7 @@ function makehaven_tasks_entity_view(array &$build, EntityInterface $entity, \Dr
       $instructions = t('This task is one occurrence in a recurring series. To defer just this copy, edit this task and move Next due later. To pause or stop future copies, open Manage recurring series.');
     }
     else {
-      $buttons['series'] = [
+      $series_buttons['series'] = [
         '#type' => 'link',
         '#title' => t('Manage recurring series'),
         '#url' => $entity->toUrl('edit-form'),
@@ -88,6 +134,28 @@ function makehaven_tasks_entity_view(array &$build, EntityInterface $entity, \Dr
       ];
       $instructions = t('This task is the source for a recurring series. To stop future copies, pause the series or change the frequency. To defer the current copy, move Next due later and unpublish it.');
     }
+  }
+
+  // Build the "More options" details element for authenticated users.
+  $more_options = [];
+  if ($current_user->isAuthenticated()) {
+    $claim_url = Url::fromRoute('makehaven_tasks.claim', ['node' => $entity->id()]);
+    $token = \Drupal::csrfToken()->get($claim_url->getInternalPath());
+    $claim_url->mergeOptions(['query' => ['token' => $token]]);
+
+    $handoff_url = Url::fromRoute('makehaven_tasks.handoff', ['node' => $entity->id()]);
+
+    $more_links_html = '<div class="task-actions__more-buttons">'
+      . '<a href="' . $claim_url->toString() . '" class="button">' . t("I'm working on this") . '</a>'
+      . '<a href="' . $handoff_url->toString() . '" class="button">' . t("I couldn't finish — hand off") . '</a>'
+      . '</div>';
+
+    $more_options = [
+      '#type' => 'container',
+      'details' => [
+        '#markup' => '<details class="task-actions__more"><summary>' . t('More options') . '</summary>' . $more_links_html . '</details>',
+      ],
+    ];
   }
 
   $build['makehaven_task_actions'] = [
@@ -99,10 +167,13 @@ function makehaven_tasks_entity_view(array &$build, EntityInterface $entity, \Dr
       '#tag' => 'h2',
       '#value' => t('What You Can Do'),
     ],
+    'status_notice' => $status_notice,
+    'buttons' => $buttons,
+    'more_options' => $more_options,
     'help' => [
       '#markup' => '<p>' . $instructions . '</p>',
     ],
-    'buttons' => $buttons,
+    'series_buttons' => $series_buttons,
   ];
 }
 
@@ -192,6 +263,76 @@ View Task: {$node_url}";
     }
     catch (\Exception $e) {
       \Drupal::logger('makehaven_tasks')->error('Error posting to Slack: @error', ['@error' => $e->getMessage()]);
+    }
+  }
+}
+
+/**
+ * Sends a Slack notification when a task is marked incomplete.
+ */
+function _makehaven_tasks_notify_slack_incomplete(NodeInterface $node, string $note): void {
+  $connector_config = \Drupal::config('slack_connector.settings');
+  $webhook_url = $connector_config->get('webhook_url');
+  if (empty($webhook_url)) {
+    \Drupal::logger('makehaven_tasks')->error('Slack webhook URL is not configured in Slack Connector.');
+    return;
+  }
+
+  $default_channel = '#tasks';
+  $title = $node->label();
+  $node_url = Url::fromRoute('entity.node.canonical', ['node' => $node->id()], ['absolute' => TRUE])->toString();
+
+  $channels = [$default_channel];
+
+  if ($node->hasField('field_task_equipment') && !$node->get('field_task_equipment')->isEmpty()) {
+    $item_node = $node->get('field_task_equipment')->entity;
+    if ($item_node) {
+      if ($item_node->hasField('field_item_slack_channel') && !$item_node->get('field_item_slack_channel')->isEmpty()) {
+        $channel_name = $item_node->get('field_item_slack_channel')->value;
+        $channels[] = '#' . ltrim($channel_name, '#');
+      }
+      if ($item_node->hasField('field_item_area_interest') && !$item_node->get('field_item_area_interest')->isEmpty()) {
+        $terms = $item_node->get('field_item_area_interest')->referencedEntities();
+        foreach ($terms as $term) {
+          if ($term->hasField('field_interest_slack_channel') && !$term->get('field_interest_slack_channel')->isEmpty()) {
+            $channel_name = $term->get('field_interest_slack_channel')->value;
+            $channels[] = '#' . ltrim($channel_name, '#');
+          }
+        }
+      }
+    }
+  }
+
+  $channels = array_unique($channels);
+
+  $message_text = "⚠ Task Incomplete: '{$title}' — needs someone to pick it up.
+Note: {$note}
+View Task: {$node_url}";
+
+  $client = \Drupal::httpClient();
+  foreach ($channels as $channel) {
+    $data = [
+      'channel' => $channel,
+      'blocks' => [
+        [
+          'type' => 'section',
+          'text' => [
+            'type' => 'mrkdwn',
+            'text' => $message_text,
+          ],
+        ],
+      ],
+    ];
+
+    try {
+      $client->post($webhook_url, [
+        'headers' => ['Content-Type' => 'application/json'],
+        'json' => $data,
+      ]);
+      \Drupal::logger('makehaven_tasks')->notice('Slack incomplete notification sent to @channel for task @nid.', ['@channel' => $channel, '@nid' => $node->id()]);
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('makehaven_tasks')->error('Error posting incomplete notification to Slack: @error', ['@error' => $e->getMessage()]);
     }
   }
 }
@@ -356,6 +497,17 @@ function _makehaven_tasks_schedule_next_occurrence($flagging): void {
   $duplicate = $series_source->createDuplicate();
   $duplicate->setNewRevision(FALSE);
   $duplicate->setCreatedTime(\Drupal::time()->getCurrentTime());
+
+  // Reset per-occurrence status fields so new occurrences start clean.
+  if ($duplicate->hasField('field_task_status')) {
+    $duplicate->set('field_task_status', 'open');
+  }
+  if ($duplicate->hasField('field_task_claimed_by')) {
+    $duplicate->set('field_task_claimed_by', NULL);
+  }
+  if ($duplicate->hasField('field_task_handoff_note')) {
+    $duplicate->set('field_task_handoff_note', NULL);
+  }
 
   if ($duplicate->hasField('field_task_next_due')) {
     $duplicate->set('field_task_next_due', $next_due);
