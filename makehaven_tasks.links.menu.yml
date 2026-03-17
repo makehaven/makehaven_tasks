@@ -15,3 +15,9 @@ makehaven_tasks.series_admin:
   description: 'Manage recurring task sources and current occurrences.'
   route_name: makehaven_tasks.series_admin
   parent: system.admin_content
+
+makehaven_tasks.log_fix:
+  title: 'Log Something I Fixed'
+  description: 'Retroactively log a task you already completed.'
+  route_name: makehaven_tasks.log_fix
+  menu_name: main

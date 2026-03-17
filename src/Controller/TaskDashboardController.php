@@ -59,6 +59,12 @@ class TaskDashboardController extends ControllerBase {
         'text' => [
           '#markup' => '<p>' . $this->t('Open member work, badge-qualified maintenance work, staff-only items, and recent recognition all in one place.') . '</p>',
         ],
+        'log_fix' => !$this->currentUserAccount->isAnonymous() ? [
+          '#type' => 'link',
+          '#title' => $this->t('+ Log something I already fixed'),
+          '#url' => \Drupal\Core\Url::fromRoute('makehaven_tasks.log_fix'),
+          '#options' => ['attributes' => ['class' => ['button', 'button--small']]],
+        ] : [],
       ],
       'sections' => [
         '#type' => 'container',

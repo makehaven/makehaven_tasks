@@ -56,3 +56,11 @@ makehaven_tasks.handoff:
   requirements:
     _permission: 'access content'
     node: \d+
+
+makehaven_tasks.log_fix:
+  path: '/tasks/log-fix'
+  defaults:
+    _form: '\Drupal\makehaven_tasks\Form\TaskLogFixForm'
+    _title: 'Log Something I Fixed'
+  requirements:
+    _user_is_logged_in: 'TRUE'
