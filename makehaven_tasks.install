@@ -1,0 +1,160 @@
+<?php
+
+/**
+ * @file
+ * Install, update, and uninstall functions for the MakeHaven Tasks module.
+ */
+
+use Drupal\field\Entity\FieldConfig;
+use Drupal\field\Entity\FieldStorageConfig;
+
+/**
+ * Add field_task_category to task nodes.
+ */
+function makehaven_tasks_update_10001(): void {
+  if (!FieldStorageConfig::loadByName('node', 'field_task_category')) {
+    FieldStorageConfig::create([
+      'field_name' => 'field_task_category',
+      'entity_type' => 'node',
+      'type' => 'list_string',
+      'settings' => [
+        'allowed_values' => [
+          ['value' => 'cleaning', 'label' => 'Cleaning'],
+          ['value' => 'maintenance', 'label' => 'Maintenance'],
+          ['value' => 'inspection', 'label' => 'Inspection'],
+          ['value' => 'restocking', 'label' => 'Restocking'],
+          ['value' => 'other', 'label' => 'Other'],
+        ],
+      ],
+      'cardinality' => 1,
+    ])->save();
+  }
+
+  if (!FieldConfig::loadByName('node', 'task', 'field_task_category')) {
+    FieldConfig::create([
+      'field_name' => 'field_task_category',
+      'entity_type' => 'node',
+      'bundle' => 'task',
+      'label' => 'Category',
+      'required' => FALSE,
+    ])->save();
+  }
+
+  // Add to the default form display.
+  $form_display = \Drupal::entityTypeManager()
+    ->getStorage('entity_form_display')
+    ->load('node.task.default');
+  if ($form_display && !$form_display->getComponent('field_task_category')) {
+    $form_display->setComponent('field_task_category', [
+      'type' => 'options_select',
+      'weight' => 3,
+      'region' => 'content',
+      'settings' => [],
+    ])->save();
+  }
+
+  // Add to the default view display.
+  $view_display = \Drupal::entityTypeManager()
+    ->getStorage('entity_view_display')
+    ->load('node.task.default');
+  if ($view_display && !$view_display->getComponent('field_task_category')) {
+    $view_display->setComponent('field_task_category', [
+      'type' => 'list_default',
+      'weight' => 3,
+      'label' => 'inline',
+      'settings' => [],
+    ])->save();
+  }
+}
+
+/**
+ * Add field_task_estimated_hours to task nodes (default 0.5 hours).
+ */
+function makehaven_tasks_update_10002(): void {
+  if (!FieldStorageConfig::loadByName('node', 'field_task_estimated_hours')) {
+    FieldStorageConfig::create([
+      'field_name' => 'field_task_estimated_hours',
+      'entity_type' => 'node',
+      'type' => 'decimal',
+      'settings' => [
+        'precision' => 5,
+        'scale' => 2,
+      ],
+      'cardinality' => 1,
+    ])->save();
+  }
+
+  if (!FieldConfig::loadByName('node', 'task', 'field_task_estimated_hours')) {
+    FieldConfig::create([
+      'field_name' => 'field_task_estimated_hours',
+      'entity_type' => 'node',
+      'bundle' => 'task',
+      'label' => 'Estimated Time (hours)',
+      'required' => FALSE,
+      'default_value' => [['value' => '0.50']],
+    ])->save();
+  }
+
+  // Add to the default form display inside the Advanced fieldset.
+  $form_display = \Drupal::entityTypeManager()
+    ->getStorage('entity_form_display')
+    ->load('node.task.default');
+  if ($form_display && !$form_display->getComponent('field_task_estimated_hours')) {
+    $form_display->setComponent('field_task_estimated_hours', [
+      'type' => 'number',
+      'weight' => 11,
+      'region' => 'content',
+      'settings' => [
+        'placeholder' => '0.5',
+      ],
+    ])->save();
+  }
+
+  // Add to the default view display.
+  $view_display = \Drupal::entityTypeManager()
+    ->getStorage('entity_view_display')
+    ->load('node.task.default');
+  if ($view_display && !$view_display->getComponent('field_task_estimated_hours')) {
+    $view_display->setComponent('field_task_estimated_hours', [
+      'type' => 'number_decimal',
+      'weight' => 11,
+      'label' => 'inline',
+      'settings' => [
+        'thousand_separator' => '',
+        'decimal_separator' => '.',
+        'scale' => 1,
+        'prefix_suffix' => TRUE,
+      ],
+    ])->save();
+  }
+}
+
+/**
+ * Add 'biennial' (every 2 years) to field_task_frequency allowed values.
+ */
+function makehaven_tasks_update_10003(): void {
+  $storage = FieldStorageConfig::loadByName('node', 'field_task_frequency');
+  if (!$storage) {
+    return;
+  }
+
+  $allowed_values = $storage->getSetting('allowed_values');
+  foreach ($allowed_values as $item) {
+    if ($item['value'] === 'biennial') {
+      // Already exists.
+      return;
+    }
+  }
+
+  // Insert 'biennial' between 'yearly' and 'occasional'.
+  $new_values = [];
+  foreach ($allowed_values as $item) {
+    $new_values[] = $item;
+    if ($item['value'] === 'yearly') {
+      $new_values[] = ['value' => 'biennial', 'label' => 'Every 2 years'];
+    }
+  }
+
+  $storage->setSetting('allowed_values', $new_values);
+  $storage->save();
+}

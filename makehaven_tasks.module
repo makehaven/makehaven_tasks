@@ -394,6 +394,7 @@ function _makehaven_tasks_calculate_next_due(string $frequency): ?string {
     'monthly' => $now->modify('+1 month'),
     'quarterly' => $now->modify('+3 months'),
     'yearly' => $now->modify('+1 year'),
+    'biennial' => $now->modify('+2 years'),
     default => NULL,
   };
 
@@ -404,7 +405,7 @@ function _makehaven_tasks_calculate_next_due(string $frequency): ?string {
  * Returns TRUE when a frequency should behave as a recurring series.
  */
 function _makehaven_tasks_is_recurring_frequency(string $frequency): bool {
-  return in_array($frequency, ['always', 'weekly', 'monthly', 'quarterly', 'yearly'], TRUE);
+  return in_array($frequency, ['always', 'weekly', 'monthly', 'quarterly', 'yearly', 'biennial'], TRUE);
 }
 
 /**
