@@ -3,6 +3,7 @@
 namespace Drupal\makehaven_tasks\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Link;
@@ -21,6 +22,7 @@ class TaskSeriesAdminController extends ControllerBase {
   public function __construct(
     protected EntityTypeManagerInterface $entityTypeManagerService,
     protected Connection $database,
+    protected DateFormatterInterface $dateFormatterService,
   ) {}
 
   /**
@@ -30,6 +32,7 @@ class TaskSeriesAdminController extends ControllerBase {
     return new static(
       $container->get('entity_type.manager'),
       $container->get('database'),
+      $container->get('date.formatter'),
     );
   }
 
@@ -220,7 +223,7 @@ class TaskSeriesAdminController extends ControllerBase {
     if ($source->hasField('field_task_next_due') && !$source->get('field_task_next_due')->isEmpty()) {
       $timestamp = strtotime((string) $source->get('field_task_next_due')->value);
       if ($timestamp) {
-        return $this->dateFormatter()->format($timestamp, 'custom', 'M j, Y g:i a');
+        return $this->dateFormatterService->format($timestamp, 'custom', 'M j, Y g:i a');
       }
     }
     return (string) $this->t('Not set');

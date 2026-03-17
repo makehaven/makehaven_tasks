@@ -3,6 +3,7 @@
 namespace Drupal\makehaven_tasks\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Link;
@@ -22,6 +23,7 @@ class TaskDashboardController extends ControllerBase {
     protected EntityTypeManagerInterface $entityTypeManagerService,
     protected Connection $database,
     protected AccountInterface $currentUserAccount,
+    protected DateFormatterInterface $dateFormatterService,
   ) {}
 
   /**
@@ -32,6 +34,7 @@ class TaskDashboardController extends ControllerBase {
       $container->get('entity_type.manager'),
       $container->get('database'),
       $container->get('current_user'),
+      $container->get('date.formatter'),
     );
   }
 
@@ -383,7 +386,7 @@ class TaskDashboardController extends ControllerBase {
     if ($task->hasField('field_task_next_due') && !$task->get('field_task_next_due')->isEmpty()) {
       $timestamp = strtotime((string) $task->get('field_task_next_due')->value);
       if ($timestamp) {
-        $next_due = $this->dateFormatter()->format($timestamp, 'custom', 'M j, Y g:i a');
+        $next_due = $this->dateFormatterService->format($timestamp, 'custom', 'M j, Y g:i a');
       }
     }
 
@@ -473,7 +476,7 @@ class TaskDashboardController extends ControllerBase {
         'task' => $record->title,
         'url' => \Drupal\Core\Url::fromRoute('entity.node.canonical', ['node' => $record->nid]),
         'person' => $record->name,
-        'completed' => $this->dateFormatter()->format((int) $record->created, 'custom', 'M j, Y g:i a'),
+        'completed' => $this->dateFormatterService->format((int) $record->created, 'custom', 'M j, Y g:i a'),
       ];
     }
 

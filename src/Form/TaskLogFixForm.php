@@ -47,14 +47,11 @@ class TaskLogFixForm extends FormBase {
    */
   public function buildForm(array $form, FormStateInterface $form_state): array {
     $form['equipment'] = [
-      '#type' => 'entity_autocomplete',
-      '#target_type' => 'node',
-      '#selection_settings' => [
-        'target_bundles' => ['item'],
-        'sort' => ['field' => 'title', 'direction' => 'ASC'],
-      ],
+      '#type' => 'select',
       '#title' => $this->t('Which tool or area?'),
-      '#description' => $this->t('Start typing the name of the tool or area you worked on.'),
+      '#description' => $this->t('Select the tool or area you worked on.'),
+      '#options' => $this->buildEquipmentOptions(),
+      '#empty_option' => $this->t('— Select a tool or area —'),
       '#required' => TRUE,
     ];
 
@@ -157,6 +154,48 @@ class TaskLogFixForm extends FormBase {
     }
 
     $form_state->setRedirectUrl(Url::fromRoute('makehaven_tasks.dashboard'));
+  }
+
+  /**
+   * Builds a sorted list of active item nodes for the equipment select.
+   *
+   * Excludes items with "Gone" status (term 3234 in item_status vocabulary).
+   *
+   * @return array
+   *   Keyed by nid, valued by node title.
+   */
+  protected function buildEquipmentOptions(): array {
+    $db = \Drupal::database();
+
+    // Load nids of items that have the "Gone" status term.
+    $gone_nids = $db->select('node__field_item_status', 's')
+      ->fields('s', ['entity_id'])
+      ->condition('s.field_item_status_target_id', 3234)
+      ->execute()
+      ->fetchCol();
+
+    $storage = $this->entityTypeManagerService->getStorage('node');
+    $query = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'item')
+      ->condition('status', 1)
+      ->sort('title', 'ASC');
+
+    if ($gone_nids) {
+      $query->condition('nid', $gone_nids, 'NOT IN');
+    }
+
+    $nids = $query->execute();
+    if (!$nids) {
+      return [];
+    }
+
+    $options = [];
+    foreach ($storage->loadMultiple($nids) as $node) {
+      $options[(int) $node->id()] = $node->label();
+    }
+
+    return $options;
   }
 
   /**
