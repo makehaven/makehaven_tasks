@@ -103,6 +103,17 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
     $actions_html .= '<a href="' . $handoff_url . '" class="task-action-link">Update handoff note</a>';
   }
 
+  // Link to log a different fix for the same tool (retroactive log).
+  if ($node->hasField('field_task_equipment') && !$node->get('field_task_equipment')->isEmpty()) {
+    $item_nid = $node->get('field_task_equipment')->target_id;
+    $log_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.retroactive_log', [], [
+      'query' => ['equipment' => $item_nid],
+    ])->toString();
+    $actions_html .= '<details class="task-more-options" style="margin-top:0.5rem"><summary>Did you fix something else on this tool?</summary>';
+    $actions_html .= '<a href="' . $log_url . '" class="task-action-link" style="margin-left:0">Log a different fix →</a>';
+    $actions_html .= '</details>';
+  }
+
   $actions_html .= '</div>';
 
   $build['task_status_actions'] = [
@@ -200,6 +211,41 @@ function makehaven_tasks_cron() {
       ]
     );
   }
+}
+
+/**
+ * Returns open (unflagged, non-incomplete) task NIDs keyed by title for an item node.
+ *
+ * @param int $item_nid
+ *   The item/tool node ID.
+ *
+ * @return array
+ *   NID => title pairs for open tasks linked to this item.
+ */
+function _makehaven_tasks_open_tasks_for_item($item_nid) {
+  $nids = \Drupal::entityQuery('node')
+    ->condition('type', 'task')
+    ->condition('status', 1)
+    ->condition('field_task_equipment', $item_nid)
+    ->condition('field_task_status', 'incomplete', '<>')
+    ->accessCheck(FALSE)
+    ->execute();
+
+  if (empty($nids)) {
+    return [];
+  }
+
+  // Filter out already-completed tasks using the flag.
+  $flag_service = \Drupal::service('flag');
+  $flag = $flag_service->getFlagById('task_completed');
+  $result = [];
+  foreach ($nids as $nid) {
+    $node = \Drupal\node\Entity\Node::load($nid);
+    if ($node && $flag && !$flag_service->getFlagging($flag, $node)) {
+      $result[$nid] = $node->label();
+    }
+  }
+  return $result;
 }
 
 /**
@@ -335,6 +381,7 @@ function _makehaven_tasks_create_occurrence(NodeInterface $source) {
     'field_task_lead',
     'field_task_priority',
     'field_task_required_badge',
+    'field_task_estimated_hours',
     'field_task_video_instruction',
     'field_task_video_url',
   ];

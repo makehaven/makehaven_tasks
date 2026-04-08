@@ -1,3 +1,10 @@
+makehaven_tasks.retroactive_log:
+  title: 'Log something I already fixed'
+  description: 'Retroactively log a task you completed on the spot.'
+  route_name: makehaven_tasks.retroactive_log
+  menu_name: main
+  weight: 10
+
 makehaven_tasks.settings:
   title: 'MakeHaven Tasks'
   description: 'Configure display code word.'

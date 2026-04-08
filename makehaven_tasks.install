@@ -297,3 +297,54 @@ function makehaven_tasks_update_9002() {
 
   return t('Phase 3: Added field_task_status and field_task_claimed_by.');
 }
+
+/**
+ * Phase 4: Add field_task_estimated_hours.
+ */
+function makehaven_tasks_update_9003() {
+  if (!FieldStorageConfig::loadByName('node', 'field_task_estimated_hours')) {
+    FieldStorageConfig::create([
+      'field_name' => 'field_task_estimated_hours',
+      'entity_type' => 'node',
+      'type' => 'float',
+      'cardinality' => 1,
+    ])->save();
+  }
+
+  if (!FieldConfig::loadByName('node', 'task', 'field_task_estimated_hours')) {
+    FieldConfig::create([
+      'field_name' => 'field_task_estimated_hours',
+      'entity_type' => 'node',
+      'bundle' => 'task',
+      'label' => 'Estimated hours',
+      'required' => FALSE,
+      'default_value' => [['value' => 0.5]],
+      'description' => 'Approximate time to complete. Used for volunteer hour reporting and workload planning. Leave blank if unknown.',
+    ])->save();
+
+    $form_display = \Drupal::entityTypeManager()
+      ->getStorage('entity_form_display')
+      ->load('node.task.default');
+    if ($form_display) {
+      $form_display->setComponent('field_task_estimated_hours', [
+        'type' => 'number',
+        'weight' => 8,
+        'settings' => ['placeholder' => '0.5'],
+      ])->save();
+    }
+
+    $view_display = \Drupal::entityTypeManager()
+      ->getStorage('entity_view_display')
+      ->load('node.task.default');
+    if ($view_display) {
+      $view_display->setComponent('field_task_estimated_hours', [
+        'type' => 'number_decimal',
+        'label' => 'inline',
+        'weight' => 8,
+        'settings' => ['decimal_separator' => '.', 'scale' => 1, 'thousand_separator' => '', 'prefix_suffix' => TRUE],
+      ])->save();
+    }
+  }
+
+  return t('Phase 4: Added field_task_estimated_hours.');
+}
