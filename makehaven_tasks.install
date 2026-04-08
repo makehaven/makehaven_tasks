@@ -1,0 +1,195 @@
+<?php
+
+/**
+ * @file
+ * Install and update hooks for the MakeHaven Tasks module.
+ */
+
+use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\field\Entity\FieldConfig;
+use Drupal\field\Entity\FieldStorageConfig;
+
+/**
+ * Phase 1 enhancements: add category, biennial frequency, instructions, video.
+ *
+ * Adds:
+ *   - field_task_category (list_string)
+ *   - field_task_instructions (text_long)
+ *   - field_task_video_url (link)
+ *   - biennial value to field_task_frequency allowed values
+ */
+function makehaven_tasks_update_9001() {
+  // 1. Add biennial to field_task_frequency allowed values.
+  // The allowed_values setting is a flat key => label array.
+  $frequency_storage = FieldStorageConfig::loadByName('node', 'field_task_frequency');
+  if ($frequency_storage && !isset($frequency_storage->getSetting('allowed_values')['biennial'])) {
+    $allowed_values = $frequency_storage->getSetting('allowed_values');
+    // Insert biennial before 'archive' if present, otherwise append.
+    if (array_key_exists('archive', $allowed_values)) {
+      $new_values = [];
+      foreach ($allowed_values as $key => $label) {
+        if ($key === 'archive') {
+          $new_values['biennial'] = 'Biennial (every 2 years)';
+        }
+        $new_values[$key] = $label;
+      }
+      $allowed_values = $new_values;
+    }
+    else {
+      $allowed_values['biennial'] = 'Biennial (every 2 years)';
+    }
+    $frequency_storage->setSetting('allowed_values', $allowed_values);
+    $frequency_storage->save();
+  }
+
+  // 2. Add field_task_category.
+  if (!FieldStorageConfig::loadByName('node', 'field_task_category')) {
+    FieldStorageConfig::create([
+      'field_name' => 'field_task_category',
+      'entity_type' => 'node',
+      'type' => 'list_string',
+      'settings' => [
+        'allowed_values' => [
+          'cleaning' => 'Cleaning',
+          'maintenance' => 'Maintenance',
+          'inspection' => 'Inspection',
+          'restocking' => 'Restocking',
+          'other' => 'Other',
+        ],
+      ],
+      'cardinality' => 1,
+    ])->save();
+  }
+
+  if (!FieldConfig::loadByName('node', 'task', 'field_task_category')) {
+    FieldConfig::create([
+      'field_name' => 'field_task_category',
+      'entity_type' => 'node',
+      'bundle' => 'task',
+      'label' => 'Category',
+      'required' => FALSE,
+    ])->save();
+
+    // Add to default form display.
+    $form_display = \Drupal::entityTypeManager()
+      ->getStorage('entity_form_display')
+      ->load('node.task.default');
+    if ($form_display) {
+      $form_display->setComponent('field_task_category', [
+        'type' => 'options_select',
+        'weight' => 5,
+      ])->save();
+    }
+
+    // Add to default view display.
+    $view_display = \Drupal::entityTypeManager()
+      ->getStorage('entity_view_display')
+      ->load('node.task.default');
+    if ($view_display) {
+      $view_display->setComponent('field_task_category', [
+        'type' => 'list_default',
+        'label' => 'inline',
+        'weight' => 5,
+      ])->save();
+    }
+  }
+
+  // 3. Add field_task_instructions (rich text).
+  if (!FieldStorageConfig::loadByName('node', 'field_task_instructions')) {
+    FieldStorageConfig::create([
+      'field_name' => 'field_task_instructions',
+      'entity_type' => 'node',
+      'type' => 'text_long',
+      'cardinality' => 1,
+    ])->save();
+  }
+
+  if (!FieldConfig::loadByName('node', 'task', 'field_task_instructions')) {
+    FieldConfig::create([
+      'field_name' => 'field_task_instructions',
+      'entity_type' => 'node',
+      'bundle' => 'task',
+      'label' => 'Instructions',
+      'required' => FALSE,
+      'description' => 'Step-by-step procedure, supply locations, and safety notes. Set on the template; displayed on each occurrence.',
+    ])->save();
+
+    $form_display = \Drupal::entityTypeManager()
+      ->getStorage('entity_form_display')
+      ->load('node.task.default');
+    if ($form_display) {
+      $form_display->setComponent('field_task_instructions', [
+        'type' => 'text_textarea',
+        'weight' => 10,
+        'settings' => ['rows' => 6],
+      ])->save();
+    }
+
+    $view_display = \Drupal::entityTypeManager()
+      ->getStorage('entity_view_display')
+      ->load('node.task.default');
+    if ($view_display) {
+      $view_display->setComponent('field_task_instructions', [
+        'type' => 'text_default',
+        'label' => 'above',
+        'weight' => 10,
+      ])->save();
+    }
+  }
+
+  // 4. Add field_task_video_url (link field).
+  if (!FieldStorageConfig::loadByName('node', 'field_task_video_url')) {
+    FieldStorageConfig::create([
+      'field_name' => 'field_task_video_url',
+      'entity_type' => 'node',
+      'type' => 'link',
+      'cardinality' => 1,
+    ])->save();
+  }
+
+  if (!FieldConfig::loadByName('node', 'task', 'field_task_video_url')) {
+    FieldConfig::create([
+      'field_name' => 'field_task_video_url',
+      'entity_type' => 'node',
+      'bundle' => 'task',
+      'label' => 'Instructional Video',
+      'required' => FALSE,
+      'description' => 'Optional link to a tutorial or how-to video for this task.',
+      'settings' => [
+        'link_type' => \Drupal\link\LinkItemInterface::LINK_EXTERNAL,
+        'title' => DRUPAL_OPTIONAL,
+      ],
+    ])->save();
+
+    $form_display = \Drupal::entityTypeManager()
+      ->getStorage('entity_form_display')
+      ->load('node.task.default');
+    if ($form_display) {
+      $form_display->setComponent('field_task_video_url', [
+        'type' => 'link_default',
+        'weight' => 11,
+        'settings' => ['placeholder_url' => 'https://...', 'placeholder_title' => ''],
+      ])->save();
+    }
+
+    $view_display = \Drupal::entityTypeManager()
+      ->getStorage('entity_view_display')
+      ->load('node.task.default');
+    if ($view_display) {
+      $view_display->setComponent('field_task_video_url', [
+        'type' => 'link',
+        'label' => 'above',
+        'weight' => 11,
+        'settings' => [
+          'trim_length' => 80,
+          'url_only' => FALSE,
+          'url_plain' => FALSE,
+          'rel' => '',
+          'target' => '_blank',
+        ],
+      ])->save();
+    }
+  }
+
+  return t('Phase 1: Added task category, biennial frequency, instructions, and video URL fields.');
+}
