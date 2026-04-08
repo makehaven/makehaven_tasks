@@ -3,6 +3,7 @@
 namespace Drupal\makehaven_tasks\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Link;
 use Drupal\Core\Url;
 use Drupal\flag\Entity\Flag;
 use Drupal\node\Entity\Node;
@@ -28,9 +29,7 @@ class TaskFacilitatorController extends ControllerBase {
       $audiences[] = 'staff_only';
     }
 
-    $nids = $this->entityTypeManager()
-      ->getStorage('node')
-      ->getQuery()
+    $nids = \Drupal::entityQuery('node')
       ->condition('type', 'task')
       ->condition('status', 1)
       ->condition('field_task_audience', $audiences, 'IN')
@@ -86,11 +85,9 @@ class TaskFacilitatorController extends ControllerBase {
         default       => '✓ Open',
       };
 
-      $claim_url = Url::fromRoute('entity.node.canonical', ['node' => $node->id()])->toString();
-
       $rows[] = [
         'data' => [
-          \Drupal::l($node->label(), Url::fromRoute('entity.node.canonical', ['node' => $node->id()])),
+          Link::fromTextAndUrl($node->label(), Url::fromRoute('entity.node.canonical', ['node' => $node->id()]))->toString(),
           $equipment,
           $category,
           $audience_label,

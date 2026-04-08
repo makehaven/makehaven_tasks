@@ -3,6 +3,7 @@
 namespace Drupal\makehaven_tasks\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Link;
 use Drupal\Core\Url;
 
 /**
@@ -66,7 +67,7 @@ class TaskPersonalHistoryController extends ControllerBase {
 
       $rows[] = [
         'data' => [
-          \Drupal::l($node->label(), Url::fromRoute('entity.node.canonical', ['node' => $node->id()])),
+          Link::fromTextAndUrl($node->label(), Url::fromRoute('entity.node.canonical', ['node' => $node->id()]))->toString(),
           $equipment,
           $category,
           $estimated,
