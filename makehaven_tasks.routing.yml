@@ -14,6 +14,24 @@ makehaven_tasks.display_page:
   requirements:
     _access: 'TRUE'
 
+makehaven_tasks.claim:
+  path: '/tasks/{node}/claim'
+  defaults:
+    _controller: '\Drupal\makehaven_tasks\Controller\TaskActionController::claim'
+    _title: 'Claim task'
+  requirements:
+    _user_is_logged_in: 'TRUE'
+    node: '\d+'
+
+makehaven_tasks.handoff:
+  path: '/tasks/{node}/handoff'
+  defaults:
+    _form: '\Drupal\makehaven_tasks\Form\TaskHandoffForm'
+    _title: 'Hand off task'
+  requirements:
+    _user_is_logged_in: 'TRUE'
+    node: '\d+'
+
 makehaven_tasks.display_fragment:
   path: '/display/tasks/fragment/{code_word}'
   defaults:

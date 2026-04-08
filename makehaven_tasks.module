@@ -26,6 +26,93 @@ function makehaven_tasks_node_insert(NodeInterface $node) {
 }
 
 /**
+ * Implements hook_node_presave().
+ *
+ * Defaults field_task_status to 'open' when a task is first published.
+ */
+function makehaven_tasks_node_presave(NodeInterface $node) {
+  if ($node->bundle() !== 'task') {
+    return;
+  }
+  if ($node->isPublished() && $node->get('field_task_status')->isEmpty()) {
+    $node->set('field_task_status', 'open');
+  }
+}
+
+/**
+ * Implements hook_node_view().
+ *
+ * Injects the status action UI (claim / handoff) on full task node pages.
+ */
+function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display, $view_mode) {
+  if ($node->bundle() !== 'task' || $view_mode !== 'full') {
+    return;
+  }
+  if (!\Drupal::currentUser()->isAuthenticated()) {
+    return;
+  }
+
+  // Don't show actions if the task is already flagged complete.
+  $flag_service = \Drupal::service('flag');
+  $flag = $flag_service->getFlagById('task_completed');
+  if ($flag && $flag_service->getFlagging($flag, $node)) {
+    return;
+  }
+
+  $status = $node->get('field_task_status')->value ?? 'open';
+  $nid = $node->id();
+  $current_uid = \Drupal::currentUser()->id();
+  $token = \Drupal::csrfToken()->get("task-action/{$nid}");
+
+  $claim_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.claim', ['node' => $nid], [
+    'query' => ['token' => $token],
+  ])->toString();
+  $handoff_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.handoff', ['node' => $nid])->toString();
+
+  $claimed_by = $node->get('field_task_claimed_by')->target_id;
+  $is_claimed_by_me = $claimed_by && $claimed_by == $current_uid;
+
+  $actions_html = '<div class="task-status-actions">';
+
+  if ($status === 'incomplete') {
+    $actions_html .= '<div class="task-status-badge task-status-incomplete">⚠ Needs attention — see handoff note below</div>';
+  }
+  elseif ($status === 'in_progress') {
+    $claimer_name = '';
+    if ($claimed_by) {
+      $claimer = \Drupal\user\Entity\User::load($claimed_by);
+      $claimer_name = $claimer ? $claimer->getDisplayName() : '';
+    }
+    $actions_html .= '<div class="task-status-badge task-status-in-progress">🔧 In progress' . ($claimer_name ? " — {$claimer_name}" : '') . '</div>';
+  }
+
+  // "I'm working on this" — only if not already claimed by me.
+  if ($status !== 'incomplete' && !$is_claimed_by_me) {
+    $actions_html .= '<a href="' . $claim_url . '" class="task-action-btn task-claim-btn">🔧 I\'m working on this</a>';
+  }
+
+  // "More options" — always show for non-incomplete tasks.
+  if ($status !== 'incomplete') {
+    $actions_html .= '<details class="task-more-options"><summary>More options</summary>';
+    $actions_html .= '<a href="' . $handoff_url . '" class="task-action-link">I couldn\'t finish — hand off</a>';
+    $actions_html .= '</details>';
+  }
+  else {
+    // For incomplete tasks, show a prominent "pick this up" option.
+    $actions_html .= '<a href="' . $claim_url . '" class="task-action-btn task-claim-btn">🙋 Pick this up</a>';
+    $actions_html .= '<a href="' . $handoff_url . '" class="task-action-link">Update handoff note</a>';
+  }
+
+  $actions_html .= '</div>';
+
+  $build['task_status_actions'] = [
+    '#markup' => $actions_html,
+    '#weight' => 50,
+    '#attached' => ['library' => ['makehaven_tasks/task_actions']],
+  ];
+}
+
+/**
  * Implements hook_cron().
  *
  * Generates occurrences for series source tasks whose next due date has passed.
@@ -73,6 +160,24 @@ function makehaven_tasks_cron() {
       continue;
     }
 
+    // Skip if there's already an active incomplete occurrence — it must be
+    // resolved (flagged complete) before a new occurrence is created.
+    $active_incomplete = \Drupal::entityQuery('node')
+      ->condition('type', 'task')
+      ->condition('status', NodeInterface::PUBLISHED)
+      ->condition('field_task_series_source', $source_nid)
+      ->condition('field_task_status', 'incomplete')
+      ->accessCheck(FALSE)
+      ->count()
+      ->execute();
+    if ($active_incomplete > 0) {
+      \Drupal::logger('makehaven_tasks')->notice(
+        'Skipping occurrence generation for series @nid — active incomplete occurrence exists.',
+        ['@nid' => $source_nid]
+      );
+      continue;
+    }
+
     // Clone the series source as a new published occurrence.
     $occurrence = _makehaven_tasks_create_occurrence($source);
     if (!$occurrence) {
@@ -94,6 +199,85 @@ function makehaven_tasks_cron() {
         '@next_due' => $due_date->format('Y-m-d'),
       ]
     );
+  }
+}
+
+/**
+ * Sends a Slack notification when a task is handed off as incomplete.
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The task node.
+ * @param string $note
+ *   The handoff note.
+ * @param int $from_uid
+ *   The user handing off.
+ * @param int|null $reassign_uid
+ *   The new lead UID if reassigned, or NULL.
+ */
+function _makehaven_tasks_notify_handoff($node, $note, $from_uid, $reassign_uid) {
+  $connector_config = \Drupal::config('slack_connector.settings');
+  $webhook_url = $connector_config->get('webhook_url');
+  if (empty($webhook_url)) {
+    return;
+  }
+
+  $from_user = \Drupal\user\Entity\User::load($from_uid);
+  $from_name = $from_user ? $from_user->getDisplayName() : 'Someone';
+  $from_slack = $from_user ? _makehaven_tasks_get_slack_id($from_user) : NULL;
+  $from_mention = $from_slack ? "<@{$from_slack}>" : $from_name;
+
+  $title = $node->label();
+  $node_url = \Drupal\Core\Url::fromRoute('entity.node.canonical', ['node' => $node->id()], ['absolute' => TRUE])->toString();
+
+  $reassign_mention = '';
+  if ($reassign_uid) {
+    $reassign_user = \Drupal\user\Entity\User::load($reassign_uid);
+    if ($reassign_user) {
+      $reassign_slack = _makehaven_tasks_get_slack_id($reassign_user);
+      $reassign_mention = $reassign_slack
+        ? " — handed to <@{$reassign_slack}>"
+        : " — handed to {$reassign_user->getDisplayName()}";
+    }
+  }
+
+  $message = "⚠ Task needs attention: *{$title}*\n{$from_mention} couldn't finish{$reassign_mention}\n_{$note}_\n{$node_url}";
+
+  // Route to #tasks + the area channel.
+  $channels = ['#tasks'];
+  if ($node->hasField('field_task_equipment') && !$node->get('field_task_equipment')->isEmpty()) {
+    $item_node = $node->get('field_task_equipment')->entity;
+    if ($item_node) {
+      if ($item_node->hasField('field_item_slack_channel') && !$item_node->get('field_item_slack_channel')->isEmpty()) {
+        $channels[] = '#' . ltrim($item_node->get('field_item_slack_channel')->value, '#');
+      }
+      if ($item_node->hasField('field_item_area_interest') && !$item_node->get('field_item_area_interest')->isEmpty()) {
+        foreach ($item_node->get('field_item_area_interest')->referencedEntities() as $term) {
+          if ($term->hasField('field_interest_slack_channel') && !$term->get('field_interest_slack_channel')->isEmpty()) {
+            $channels[] = '#' . ltrim($term->get('field_interest_slack_channel')->value, '#');
+          }
+        }
+      }
+    }
+  }
+
+  $channels = array_unique($channels);
+  $client = \Drupal::httpClient();
+  foreach ($channels as $channel) {
+    try {
+      $client->post($webhook_url, [
+        'headers' => ['Content-Type' => 'application/json'],
+        'json' => [
+          'channel' => $channel,
+          'blocks' => [[
+            'type' => 'section',
+            'text' => ['type' => 'mrkdwn', 'text' => $message],
+          ]],
+        ],
+      ]);
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('makehaven_tasks')->error('Error posting handoff Slack notification: @error', ['@error' => $e->getMessage()]);
+    }
   }
 }
 

@@ -1,0 +1,5 @@
+task_actions:
+  version: VERSION
+  css:
+    component:
+      css/task-actions.css: {}
