@@ -235,15 +235,21 @@ function _makehaven_tasks_open_tasks_for_item($item_nid) {
     return [];
   }
 
-  // Filter out already-completed tasks using the flag.
+  // Filter out tasks already flagged complete by anyone.
   $flag_service = \Drupal::service('flag');
   $flag = $flag_service->getFlagById('task_completed');
   $result = [];
   foreach ($nids as $nid) {
     $node = \Drupal\node\Entity\Node::load($nid);
-    if ($node && $flag && !$flag_service->getFlagging($flag, $node)) {
-      $result[$nid] = $node->label();
+    if (!$node) {
+      continue;
     }
+    // getEntityFlaggings returns all flaggings regardless of user, so this
+    // correctly identifies tasks completed by any member.
+    if ($flag && !empty($flag_service->getEntityFlaggings($flag, $node))) {
+      continue;
+    }
+    $result[$nid] = $node->label();
   }
   return $result;
 }
