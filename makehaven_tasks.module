@@ -2,6 +2,8 @@
 
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Url;
+use Drupal\node\Entity\Node;
+use Drupal\node\NodeInterface;
 
 /**
  * Implements hook_entity_insert().
@@ -9,6 +11,249 @@ use Drupal\Core\Url;
 function makehaven_tasks_entity_insert(EntityInterface $entity) {
   if ($entity->getEntityTypeId() === 'flagging' && $entity->getFlagId() === 'task_completed') {
     _makehaven_tasks_notify_slack($entity);
+  }
+}
+
+/**
+ * Implements hook_node_insert().
+ *
+ * Notify the task lead when a new published task node is created.
+ */
+function makehaven_tasks_node_insert(NodeInterface $node) {
+  if ($node->bundle() === 'task' && $node->isPublished()) {
+    _makehaven_tasks_notify_lead_due($node);
+  }
+}
+
+/**
+ * Implements hook_cron().
+ *
+ * Generates occurrences for series source tasks whose next due date has passed.
+ */
+function makehaven_tasks_cron() {
+  $frequency_days = [
+    'weekly' => 7,
+    'monthly' => 30,
+    'quarterly' => 90,
+    'yearly' => 365,
+    'biennial' => 730,
+  ];
+
+  $now = new \DateTime('now', new \DateTimeZone('UTC'));
+  $now_str = $now->format('Y-m-d\TH:i:s');
+
+  // Find published series source nodes (no field_task_series_source set) that
+  // have a recurring frequency and an overdue field_task_next_due.
+  $query = \Drupal::entityQuery('node')
+    ->condition('type', 'task')
+    ->condition('status', NodeInterface::PUBLISHED)
+    ->condition('field_task_frequency', array_keys($frequency_days), 'IN')
+    ->condition('field_task_next_due', $now_str, '<=')
+    ->notExists('field_task_series_source')
+    ->accessCheck(FALSE);
+
+  // Only process non-paused series.
+  $query->condition('field_task_series_paused', TRUE, '<>');
+
+  $nids = $query->execute();
+
+  if (empty($nids)) {
+    return;
+  }
+
+  foreach ($nids as $source_nid) {
+    $source = Node::load($source_nid);
+    if (!$source) {
+      continue;
+    }
+
+    $frequency = $source->field_task_frequency->value;
+    $days = $frequency_days[$frequency] ?? NULL;
+    if (!$days) {
+      continue;
+    }
+
+    // Clone the series source as a new published occurrence.
+    $occurrence = _makehaven_tasks_create_occurrence($source);
+    if (!$occurrence) {
+      continue;
+    }
+
+    // Advance next_due on the series source by the frequency interval,
+    // calculated from the existing next_due date (not from now) to stay on schedule.
+    $due_date = new \DateTime($source->field_task_next_due->value, new \DateTimeZone('UTC'));
+    $due_date->modify("+{$days} days");
+    $source->set('field_task_next_due', $due_date->format('Y-m-d\TH:i:s'));
+    $source->save();
+
+    \Drupal::logger('makehaven_tasks')->notice(
+      'Created task occurrence @nid from series source @source_nid. Next due: @next_due.',
+      [
+        '@nid' => $occurrence->id(),
+        '@source_nid' => $source_nid,
+        '@next_due' => $due_date->format('Y-m-d'),
+      ]
+    );
+  }
+}
+
+/**
+ * Gets a user's Slack ID from their profile entity.
+ *
+ * field_member_slack_id_number lives on the profile entity, not the user.
+ *
+ * @param \Drupal\user\UserInterface $user
+ *   The user account.
+ *
+ * @return string|null
+ *   The Slack member ID (e.g. "U0123ABC") or NULL if not set.
+ */
+function _makehaven_tasks_get_slack_id($user) {
+  if (!$user || $user->isAnonymous()) {
+    return NULL;
+  }
+  $profiles = \Drupal::entityTypeManager()
+    ->getStorage('profile')
+    ->loadByProperties(['uid' => $user->id(), 'type' => 'main', 'status' => 1]);
+  if (empty($profiles)) {
+    return NULL;
+  }
+  $profile = reset($profiles);
+  if ($profile->hasField('field_member_slack_id_number') && !$profile->get('field_member_slack_id_number')->isEmpty()) {
+    return $profile->get('field_member_slack_id_number')->value;
+  }
+  return NULL;
+}
+
+/**
+ * Creates a published occurrence node from a series source node.
+ *
+ * Copies all relevant fields and sets field_task_series_source to the source.
+ * Notifies the lead after saving.
+ *
+ * @param \Drupal\node\NodeInterface $source
+ *   The series source task node.
+ *
+ * @return \Drupal\node\NodeInterface|null
+ *   The new occurrence node, or NULL on failure.
+ */
+function _makehaven_tasks_create_occurrence(NodeInterface $source) {
+  $fields_to_copy = [
+    'body',
+    'field_task_audience',
+    'field_task_bank',
+    'field_task_category',
+    'field_task_equipment',
+    'field_task_frequency',
+    'field_task_group',
+    'field_task_image',
+    'field_task_instructions',
+    'field_task_lead',
+    'field_task_priority',
+    'field_task_required_badge',
+    'field_task_video_instruction',
+    'field_task_video_url',
+  ];
+
+  $values = [
+    'type' => 'task',
+    'title' => $source->label(),
+    'status' => NodeInterface::PUBLISHED,
+    'uid' => $source->getOwnerId(),
+    'field_task_series_source' => ['target_id' => $source->id()],
+  ];
+
+  foreach ($fields_to_copy as $field_name) {
+    if ($source->hasField($field_name) && !$source->get($field_name)->isEmpty()) {
+      $values[$field_name] = $source->get($field_name)->getValue();
+    }
+  }
+
+  try {
+    $occurrence = Node::create($values);
+    $occurrence->save();
+    return $occurrence;
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('makehaven_tasks')->error(
+      'Failed to create task occurrence from source @nid: @error',
+      ['@nid' => $source->id(), '@error' => $e->getMessage()]
+    );
+    return NULL;
+  }
+}
+
+/**
+ * Sends a Slack notification to the task lead (and area channel) when a task is due.
+ *
+ * Uses @mention in the area channel since incoming webhooks cannot send DMs.
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The newly published task node.
+ */
+function _makehaven_tasks_notify_lead_due(NodeInterface $node) {
+  // Only notify if the task has a lead.
+  if ($node->get('field_task_lead')->isEmpty()) {
+    return;
+  }
+
+  $connector_config = \Drupal::config('slack_connector.settings');
+  $webhook_url = $connector_config->get('webhook_url');
+  if (empty($webhook_url)) {
+    return;
+  }
+
+  $lead_user = $node->get('field_task_lead')->entity;
+  if (!$lead_user) {
+    return;
+  }
+
+  $title = $node->label();
+  $node_url = Url::fromRoute('entity.node.canonical', ['node' => $node->id()], ['absolute' => TRUE])->toString();
+
+  $slack_id = _makehaven_tasks_get_slack_id($lead_user);
+  $lead_mention = $slack_id ? "<@{$slack_id}>" : $lead_user->getDisplayName();
+
+  $message = "📋 Task due: *{$title}*\nAssigned to: {$lead_mention}\n{$node_url}";
+
+  // Collect channels: #tasks always, plus equipment area channel if set.
+  $channels = ['#tasks'];
+  if ($node->hasField('field_task_equipment') && !$node->get('field_task_equipment')->isEmpty()) {
+    $item_node = $node->get('field_task_equipment')->entity;
+    if ($item_node) {
+      if ($item_node->hasField('field_item_slack_channel') && !$item_node->get('field_item_slack_channel')->isEmpty()) {
+        $channels[] = '#' . ltrim($item_node->get('field_item_slack_channel')->value, '#');
+      }
+      if ($item_node->hasField('field_item_area_interest') && !$item_node->get('field_item_area_interest')->isEmpty()) {
+        foreach ($item_node->get('field_item_area_interest')->referencedEntities() as $term) {
+          if ($term->hasField('field_interest_slack_channel') && !$term->get('field_interest_slack_channel')->isEmpty()) {
+            $channels[] = '#' . ltrim($term->get('field_interest_slack_channel')->value, '#');
+          }
+        }
+      }
+    }
+  }
+
+  $channels = array_unique($channels);
+  $client = \Drupal::httpClient();
+
+  foreach ($channels as $channel) {
+    $data = [
+      'channel' => $channel,
+      'blocks' => [[
+        'type' => 'section',
+        'text' => ['type' => 'mrkdwn', 'text' => $message],
+      ]],
+    ];
+    try {
+      $client->post($webhook_url, [
+        'headers' => ['Content-Type' => 'application/json'],
+        'json' => $data,
+      ]);
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('makehaven_tasks')->error('Error posting task-due Slack notification: @error', ['@error' => $e->getMessage()]);
+    }
   }
 }
 
@@ -36,15 +281,10 @@ function _makehaven_tasks_notify_slack($flagging) {
   // Generate an absolute URL for the node.
   $node_url = Url::fromRoute('entity.node.canonical', ['node' => $node->id()], ['absolute' => TRUE])->toString();
 
-  // User name
+  // User name — Slack ID lives on the profile entity, not the user.
   $completed_by = $user->getDisplayName();
-  
-  // Try to get Slack ID for mention
-  $mention = " (by {$completed_by})";
-  if ($user->hasField('field_member_slack_id_number') && !$user->get('field_member_slack_id_number')->isEmpty()) {
-    $slack_username = $user->get('field_member_slack_id_number')->value;
-    $mention = " (by <@{$slack_username}>)"; // Note: Slack API might need <@ID> format but simple text works often
-  }
+  $slack_id = _makehaven_tasks_get_slack_id($user);
+  $mention = $slack_id ? " (by <@{$slack_id}>)" : " (by {$completed_by})";
 
   // Build an array of channels to post to (same logic as poster)
   $channels = [$default_channel];
