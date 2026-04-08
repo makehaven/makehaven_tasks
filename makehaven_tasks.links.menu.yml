@@ -1,3 +1,17 @@
+makehaven_tasks.my_history:
+  title: 'My completed tasks'
+  description: 'View your personal task completion history.'
+  route_name: makehaven_tasks.my_history
+  menu_name: main
+  weight: 11
+
+makehaven_tasks.facilitator:
+  title: 'Specialist tasks'
+  description: 'Badge-required and staff-only tasks that need expert attention.'
+  route_name: makehaven_tasks.facilitator
+  menu_name: main
+  weight: 12
+
 makehaven_tasks.retroactive_log:
   title: 'Log something I already fixed'
   description: 'Retroactively log a task you completed on the spot.'

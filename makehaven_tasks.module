@@ -4,6 +4,7 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Url;
 use Drupal\node\Entity\Node;
 use Drupal\node\NodeInterface;
+use Drupal\views\ViewExecutable;
 
 /**
  * Implements hook_entity_insert().
@@ -22,6 +23,25 @@ function makehaven_tasks_entity_insert(EntityInterface $entity) {
 function makehaven_tasks_node_insert(NodeInterface $node) {
   if ($node->bundle() === 'task' && $node->isPublished()) {
     _makehaven_tasks_notify_lead_due($node);
+  }
+}
+
+/**
+ * Implements hook_views_query_alter().
+ *
+ * Hides staff_only tasks from users who are not staff/admin.
+ * Badge-required tasks remain visible to all — the badge field gate handles
+ * the actual access; facilitators can see what needs their skills.
+ */
+function makehaven_tasks_views_query_alter(ViewExecutable $view, $query) {
+  if ($view->id() !== 'tasks') {
+    return;
+  }
+  $account = \Drupal::currentUser();
+  $staff_roles = ['administrator', 'manager', 'content_editor'];
+  $is_staff = (bool) array_intersect($staff_roles, $account->getRoles());
+  if (!$is_staff) {
+    $query->addWhere(0, 'node__field_task_audience.field_task_audience_value', 'staff_only', '<>');
   }
 }
 
@@ -72,7 +92,17 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
   $claimed_by = $node->get('field_task_claimed_by')->target_id;
   $is_claimed_by_me = $claimed_by && $claimed_by == $current_uid;
 
-  $actions_html = '<div class="task-status-actions">';
+  // Audience badge — shown above the actions.
+  $audience_labels = [
+    'badge_holders' => '🔑 Requires a badge',
+    'staff_only'    => '🔒 Staff only',
+  ];
+  $audience = $node->hasField('field_task_audience') ? $node->get('field_task_audience')->value : NULL;
+  $audience_badge = isset($audience_labels[$audience])
+    ? '<div class="task-audience-badge task-audience-' . $audience . '">' . $audience_labels[$audience] . '</div>'
+    : '';
+
+  $actions_html = '<div class="task-status-actions">' . $audience_badge;
 
   if ($status === 'incomplete') {
     $actions_html .= '<div class="task-status-badge task-status-incomplete">⚠ Needs attention — see handoff note below</div>';
@@ -451,7 +481,12 @@ function _makehaven_tasks_notify_lead_due(NodeInterface $node) {
   $slack_id = _makehaven_tasks_get_slack_id($lead_user);
   $lead_mention = $slack_id ? "<@{$slack_id}>" : $lead_user->getDisplayName();
 
-  $message = "📋 Task due: *{$title}*\nAssigned to: {$lead_mention}\n{$node_url}";
+  $audience_note = '';
+  if ($node->hasField('field_task_audience')) {
+    $audience_map = ['badge_holders' => ' _(requires badge)_', 'staff_only' => ' _(staff only)_'];
+    $audience_note = $audience_map[$node->get('field_task_audience')->value] ?? '';
+  }
+  $message = "📋 Task due{$audience_note}: *{$title}*\nAssigned to: {$lead_mention}\n{$node_url}";
 
   // Collect channels: #tasks always, plus equipment area channel if set.
   $channels = ['#tasks'];

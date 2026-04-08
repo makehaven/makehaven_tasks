@@ -57,6 +57,27 @@
   margin-bottom: 0.5rem;
 }
 
+.task-audience-badge {
+  display: inline-block;
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.task-audience-badge_holders {
+  background: #e8f4fd;
+  color: #0369a1;
+  border: 1px solid #7dd3fc;
+}
+
+.task-audience-staff_only {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
 .task-action-link {
   display: inline-block;
   color: #dc3545;

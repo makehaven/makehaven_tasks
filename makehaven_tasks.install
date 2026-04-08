@@ -348,3 +348,43 @@ function makehaven_tasks_update_9003() {
 
   return t('Phase 4: Added field_task_estimated_hours.');
 }
+
+/**
+ * Fix stale help text, unhide field_task_audience on the task form.
+ */
+function makehaven_tasks_update_9004() {
+  // Fix the "Not yet implemented" lie on field_task_frequency.
+  $fc = FieldConfig::loadByName('node', 'task', 'field_task_frequency');
+  if ($fc) {
+    $fc->setDescription('How often this task recurs. Set a frequency and a Next Due date (leave Series Source empty) to create a recurring series — the cron job will generate new occurrences automatically.');
+    $fc->save();
+  }
+
+  // Better guidance on field_task_next_due.
+  $nd = FieldConfig::loadByName('node', 'task', 'field_task_next_due');
+  if ($nd) {
+    $nd->setDescription('When the first (or next) occurrence should become active. Required for recurring tasks. Leave blank for one-off tasks.');
+    $nd->save();
+  }
+
+  // Clarify field_task_series_source.
+  $ss = FieldConfig::loadByName('node', 'task', 'field_task_series_source');
+  if ($ss) {
+    $ss->setDescription('Set automatically on generated occurrences. Leave empty when creating a new recurring series template.');
+    $ss->save();
+  }
+
+  // Unhide field_task_audience on the default task form display.
+  $form_display = \Drupal::entityTypeManager()
+    ->getStorage('entity_form_display')
+    ->load('node.task.default');
+  if ($form_display && !$form_display->getComponent('field_task_audience')) {
+    $form_display->setComponent('field_task_audience', [
+      'type' => 'options_select',
+      'weight' => 4,
+      'region' => 'content',
+    ])->save();
+  }
+
+  return t('Fixed field help text and unhid field_task_audience on task form.');
+}
