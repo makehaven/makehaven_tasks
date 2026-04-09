@@ -166,6 +166,44 @@
   color: #b02a37;
 }
 
+/* ---- Staff action bar (top of /tasks, manager-only) ---- */
+
+.task-staff-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+
+.task-staff-btn {
+  display: inline-block;
+  padding: 0.45rem 1rem;
+  border-radius: 5px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none !important;
+  background: #f8f9fa;
+  color: #343a40 !important;
+  border: 1px solid #ced4da;
+  transition: background 0.15s;
+}
+
+.task-staff-btn:hover {
+  background: #e9ecef;
+}
+
+.task-staff-btn--primary {
+  background: #0d6efd;
+  color: #fff !important;
+  border-color: #0d6efd;
+}
+
+.task-staff-btn--primary:hover {
+  background: #0b5ed7;
+  border-color: #0b5ed7;
+}
+
 /* ---- How-it-works banner (tasks list page) ---- */
 
 .task-how-it-works {

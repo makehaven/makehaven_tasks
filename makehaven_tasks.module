@@ -636,14 +636,27 @@ function makehaven_tasks_preprocess_views_view(&$variables) {
   // Always attach the CSS library (the header area plugin doesn't do this).
   $variables['#attached']['library'][] = 'makehaven_tasks/task_actions';
 
-  // Append a staff-only specialist tasks link into the existing header output.
+  // Inject staff action bar (create task + recurring tasks + facilitator link).
   $account = \Drupal::currentUser();
   $staff_roles = ['administrator', 'manager', 'content_editor'];
-  if (array_intersect($staff_roles, $account->getRoles())) {
+  $is_staff = (bool) array_intersect($staff_roles, $account->getRoles());
+
+  if ($is_staff && $account->hasPermission('create task content')) {
+    $create_url = \Drupal\Core\Url::fromRoute('node.add', ['node_type' => 'task'])->toString();
+    $recurring_url = \Drupal\Core\Url::fromUri('internal:/admin/content', [
+      'query' => ['type' => 'task', 'field_task_frequency' => 1],
+    ])->toString();
     $facilitator_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.facilitator')->toString();
-    $variables['header']['staff_link'] = [
-      '#markup' => '<p class="task-how-links" style="margin-top:0.5rem">' .
-        '<a href="' . $facilitator_url . '">→ Specialist &amp; staff tasks</a></p>',
+
+    $variables['header']['staff_actions'] = [
+      '#markup' => \Drupal\Core\Render\Markup::create(
+        '<div class="task-staff-bar">'
+        . '<a href="' . $create_url . '" class="task-staff-btn task-staff-btn--primary">+ Create task</a>'
+        . '<a href="' . $recurring_url . '" class="task-staff-btn">⟳ Manage recurring tasks</a>'
+        . '<a href="' . $facilitator_url . '" class="task-staff-btn">🔧 Specialist tasks</a>'
+        . '</div>'
+      ),
+      '#weight' => -50,
     ];
   }
 }
