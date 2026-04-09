@@ -1,86 +1,286 @@
-.task-status-actions {
-  margin: 1.5rem 0;
-  padding: 1rem;
-  border-top: 1px solid #ddd;
+/* =============================================================================
+   MakeHaven Tasks — action panel & card styles
+   ============================================================================= */
+
+/* ---- Full-node action panel (task-action-panel) ---- */
+
+.task-action-panel {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  margin: 1.5rem 0 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1rem;
 }
 
-.task-status-badge {
+/* Status context badges */
+.tap-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tap-badge {
   display: inline-block;
-  padding: 0.4rem 0.75rem;
-  border-radius: 4px;
+  padding: 0.3rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
   font-weight: 600;
-  font-size: 0.9rem;
 }
 
-.task-status-incomplete {
-  background: #fff3cd;
-  color: #856404;
-  border: 1px solid #ffc107;
-}
-
-.task-status-in-progress {
+.tap-badge--inprogress {
   background: #cfe2ff;
   color: #084298;
-  border: 1px solid #84b4f8;
+  border: 1px solid #9ec5fe;
 }
 
-.task-action-btn {
-  display: inline-block;
-  padding: 0.6rem 1.2rem;
-  background: #0d6efd;
-  color: #fff !important;
-  border-radius: 4px;
-  text-decoration: none;
-  font-weight: 600;
-  font-size: 0.95rem;
-  align-self: flex-start;
+.tap-badge--incomplete {
+  background: #fff3cd;
+  color: #664d03;
+  border: 1px solid #ffda6a;
 }
 
-.task-action-btn:hover {
-  background: #0b5ed7;
-}
-
-.task-more-options {
-  font-size: 0.9rem;
-}
-
-.task-more-options summary {
-  cursor: pointer;
-  color: #666;
-  user-select: none;
-}
-
-.task-more-options[open] summary {
-  margin-bottom: 0.5rem;
-}
-
-.task-audience-badge {
-  display: inline-block;
-  padding: 0.3rem 0.6rem;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
-}
-
-.task-audience-badge_holders {
-  background: #e8f4fd;
+.tap-badge--badge {
+  background: #e0f2fe;
   color: #0369a1;
   border: 1px solid #7dd3fc;
 }
 
-.task-audience-staff_only {
+.tap-badge--staff {
   background: #fef3c7;
   color: #92400e;
   border: 1px solid #fcd34d;
 }
 
-.task-action-link {
+/* Primary action buttons row */
+.tap-primary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.tap-btn {
   display: inline-block;
-  color: #dc3545;
+  padding: 0.75rem 1.75rem;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 1rem;
+  text-decoration: none !important;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.tap-btn:hover {
+  transform: translateY(-1px);
+}
+
+/* "Claim task" / "Pick this up" — blue */
+.tap-btn--claim {
+  background: #0d6efd;
+  color: #fff !important;
+}
+
+.tap-btn--claim:hover {
+  background: #0b5ed7;
+  color: #fff !important;
+}
+
+/* "You've claimed this" — muted state (not a link) */
+.tap-btn--claimed {
+  display: inline-block;
+  padding: 0.75rem 1.75rem;
+  background: #e9ecef;
+  color: #495057;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: default;
+}
+
+/* Flag module "Mark as Done" — style as a prominent green button */
+.node--type-task .flag-task-completed,
+.flag-task-completed {
+  display: inline-flex;
+}
+
+.node--type-task .flag-task-completed a,
+.node--type-task .flag-task-completed .flag-action {
+  display: inline-block;
+  padding: 0.75rem 1.75rem;
+  background: #198754;
+  color: #fff !important;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 1rem;
+  text-decoration: none !important;
+  transition: background 0.15s, transform 0.1s;
+  border: none;
+  cursor: pointer;
+}
+
+.node--type-task .flag-task-completed a:hover,
+.node--type-task .flag-task-completed .flag-action:hover {
+  background: #157347;
+  color: #fff !important;
+  transform: translateY(-1px);
+}
+
+/* The flag field wrapper — remove default margin/padding so it sits inline */
+.node--type-task .field--name-flag-task-completed {
+  display: inline-flex;
+  margin: 0;
+}
+
+/* Secondary actions row */
+.tap-secondary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #dee2e6;
+}
+
+.tap-link {
   font-size: 0.9rem;
-  margin-left: 0.5rem;
+  color: #6c757d;
+  text-decoration: none;
+  border-bottom: 1px dashed #adb5bd;
+  padding-bottom: 1px;
+}
+
+.tap-link:hover {
+  color: #343a40;
+  border-bottom-style: solid;
+}
+
+.tap-link--danger {
+  color: #dc3545;
+  border-bottom-color: #f5a0a7;
+}
+
+.tap-link--danger:hover {
+  color: #b02a37;
+}
+
+/* ---- How-it-works banner (tasks list page) ---- */
+
+.task-how-it-works {
+  background: #f0f7ff;
+  border: 1px solid #c8dff5;
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.95rem;
+}
+
+.task-how-it-works p {
+  margin: 0 0 0.75rem;
+}
+
+.task-how-steps {
+  margin: 0.5rem 0 0.75rem 1.25rem;
+  padding: 0;
+}
+
+.task-how-steps li {
+  margin-bottom: 0.3rem;
+}
+
+.task-how-links {
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+  color: #555;
+}
+
+.task-how-links a {
+  color: #0d6efd;
+  text-decoration: none;
+}
+
+.task-how-links a:hover {
+  text-decoration: underline;
+}
+
+/* ---- Card meta badges (task list view) ---- */
+
+.task-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+
+.task-card-badge {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.task-card-inprogress {
+  background: #cfe2ff;
+  color: #084298;
+  border: 1px solid #9ec5fe;
+}
+
+.task-card-incomplete {
+  background: #fff3cd;
+  color: #664d03;
+  border: 1px solid #ffda6a;
+}
+
+.task-card-time {
+  background: #e9ecef;
+  color: #495057;
+  border: 1px solid #ced4da;
+}
+
+.task-card-category {
+  background: #d1e7dd;
+  color: #0a3622;
+  border: 1px solid #a3cfbb;
+}
+
+/* ---- Card action buttons (in list view) ---- */
+
+.task-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.task-action-btn {
+  display: inline-block;
+  padding: 0.45rem 1rem;
+  background: #0d6efd;
+  color: #fff !important;
+  border-radius: 5px;
+  text-decoration: none !important;
+  font-weight: 600;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.task-action-btn:hover {
+  background: #0b5ed7;
+  color: #fff !important;
+}
+
+.task-card-details-link {
+  font-size: 0.875rem;
+  color: #6c757d;
+  text-decoration: none;
+}
+
+.task-card-details-link:hover {
+  color: #0d6efd;
+  text-decoration: underline;
 }
