@@ -116,9 +116,9 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
     $actions_html .= '<div class="task-status-badge task-status-in-progress">🔧 In progress' . ($claimer_name ? " — {$claimer_name}" : '') . '</div>';
   }
 
-  // "I'm working on this" — only if not already claimed by me.
+  // "Claim task" — only if not already claimed by me.
   if ($status !== 'incomplete' && !$is_claimed_by_me) {
-    $actions_html .= '<a href="' . $claim_url . '" class="task-action-btn task-claim-btn">🔧 I\'m working on this</a>';
+    $actions_html .= '<a href="' . $claim_url . '" class="task-action-btn task-claim-btn">Claim task</a>';
   }
 
   // "More options" — always show for non-incomplete tasks.
@@ -129,7 +129,7 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
   }
   else {
     // For incomplete tasks, show a prominent "pick this up" option.
-    $actions_html .= '<a href="' . $claim_url . '" class="task-action-btn task-claim-btn">🙋 Pick this up</a>';
+    $actions_html .= '<a href="' . $claim_url . '" class="task-action-btn task-claim-btn">Claim task</a>';
     $actions_html .= '<a href="' . $handoff_url . '" class="task-action-link">Update handoff note</a>';
   }
 
