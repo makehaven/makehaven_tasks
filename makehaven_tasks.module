@@ -66,6 +66,109 @@ function makehaven_tasks_user_view(array &$build, \Drupal\user\UserInterface $ac
 }
 
 /**
+ * Implements hook_form_BASE_FORM_ID_alter() for node_task_form.
+ *
+ * Simplifies the task create/edit form by:
+ *  - Surfacing only the essential fields at the top level
+ *  - Collapsing secondary details into a "More details" group
+ *  - Collapsing recurring-series config into its own group
+ *  - Hiding fields that are never set at creation time (claimed_by, bank, etc.)
+ *  - Removing standard Drupal noise (promote, sticky, path, sitemaps, redirects)
+ */
+function makehaven_tasks_form_node_task_form_alter(array &$form, \Drupal\Core\Form\FormStateInterface $form_state, string $form_id): void {
+  // ── 1. Core fields — leave at top level, tighten weights ─────────────────
+  // title is already weight -5; body/equipment/audience come right after.
+  if (isset($form['body'])) {
+    $form['body']['#weight'] = 1;
+  }
+  if (isset($form['field_task_equipment'])) {
+    $form['field_task_equipment']['#weight'] = 2;
+  }
+  if (isset($form['field_task_audience'])) {
+    $form['field_task_audience']['#weight'] = 3;
+    // Help text so staff know what each option means.
+    $form['field_task_audience']['widget']['#description'] = t(
+      'Who should see and claim this task? Choose "Staff only" for tasks requiring elevated access.'
+    );
+  }
+  if (isset($form['field_task_category'])) {
+    $form['field_task_category']['#weight'] = 4;
+  }
+  if (isset($form['field_task_priority'])) {
+    $form['field_task_priority']['#weight'] = 5;
+  }
+
+  // ── 2. "More details" collapsible group ───────────────────────────────────
+  $form['task_details'] = [
+    '#type'        => 'details',
+    '#title'       => t('More details'),
+    '#open'        => FALSE,
+    '#weight'      => 20,
+    '#group'       => 'advanced',
+  ];
+  foreach ([
+    'field_task_estimated_hours',
+    'field_task_instructions',
+    'field_task_image',
+    'field_task_video_url',
+    'field_task_video_instruction',
+  ] as $field) {
+    if (isset($form[$field])) {
+      $form[$field]['#group'] = 'task_details';
+    }
+  }
+
+  // Lead (assigned volunteer) belongs in details too.
+  if (isset($form['field_task_lead'])) {
+    $form['field_task_lead']['#group'] = 'task_details';
+  }
+
+  // ── 3. "Recurring series" collapsible group ───────────────────────────────
+  $form['task_recurring'] = [
+    '#type'   => 'details',
+    '#title'  => t('Recurring series'),
+    '#open'   => FALSE,
+    '#weight' => 21,
+    '#group'  => 'advanced',
+  ];
+  foreach ([
+    'field_task_frequency',
+    'field_task_next_due',
+    'field_task_series_paused',
+    'field_task_series_source',
+  ] as $field) {
+    if (isset($form[$field])) {
+      $form[$field]['#group'] = 'task_recurring';
+    }
+  }
+
+  // ── 4. Hide fields that shouldn't be set at create/edit time ─────────────
+  $hide = [
+    'field_task_status',      // auto-set to 'open' on publish via hook_node_presave
+    'field_task_claimed_by',  // set when a member claims the task
+    'field_task_bank',        // internal categorisation, not needed per-task
+    'comment_node_task',      // comment settings widget — not relevant here
+  ];
+  foreach ($hide as $field) {
+    if (isset($form[$field])) {
+      $form[$field]['#access'] = FALSE;
+    }
+  }
+
+  // ── 5. Remove standard Drupal node-form noise ─────────────────────────────
+  $noise = ['promote', 'sticky', 'path', 'simple_sitemap', 'url_redirects'];
+  foreach ($noise as $key) {
+    if (isset($form[$key])) {
+      $form[$key]['#access'] = FALSE;
+    }
+  }
+  // The revision fieldset lives inside the sidebar "advanced" group.
+  if (isset($form['revision_information'])) {
+    $form['revision_information']['#access'] = FALSE;
+  }
+}
+
+/**
  * Implements hook_node_insert().
  *
  * Notify the task lead when a new published task node is created.
@@ -643,9 +746,7 @@ function makehaven_tasks_preprocess_views_view(&$variables) {
 
   if ($is_staff && $account->hasPermission('create task content')) {
     $create_url = \Drupal\Core\Url::fromRoute('node.add', ['node_type' => 'task'])->toString();
-    $recurring_url = \Drupal\Core\Url::fromUri('internal:/admin/content', [
-      'query' => ['type' => 'task', 'field_task_frequency' => 1],
-    ])->toString();
+    $recurring_url = \Drupal\Core\Url::fromUri('internal:/tasks/manager')->toString();
     $facilitator_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.facilitator')->toString();
 
     $variables['header']['staff_actions'] = [
