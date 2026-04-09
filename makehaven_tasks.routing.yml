@@ -56,6 +56,14 @@ makehaven_tasks.handoff:
     _user_is_logged_in: 'TRUE'
     node: '\d+'
 
+makehaven_tasks.leaderboard:
+  path: '/tasks/leaderboard'
+  defaults:
+    _controller: '\Drupal\makehaven_tasks\Controller\TaskLeaderboardController::page'
+    _title: 'Task Leaderboard'
+  requirements:
+    _access: 'TRUE'
+
 makehaven_tasks.display_fragment:
   path: '/display/tasks/fragment/{code_word}'
   defaults:

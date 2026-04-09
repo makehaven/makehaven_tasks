@@ -284,3 +284,267 @@
   color: #0d6efd;
   text-decoration: underline;
 }
+
+/* =============================================================================
+   Leaderboard page (/tasks/leaderboard)
+   ============================================================================= */
+
+.task-leaderboard-page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.task-lb-intro {
+  background: #f0f7ff;
+  border: 1px solid #c8dff5;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.75rem;
+  font-size: 0.95rem;
+  color: #333;
+}
+
+.task-lb-intro p {
+  margin: 0;
+}
+
+/* ── Two-column layout (all-time + this month) ── */
+
+.task-lb-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-bottom: 2.5rem;
+}
+
+@media (max-width: 640px) {
+  .task-lb-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.task-lb-section-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0 0 1rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 2px solid #dee2e6;
+}
+
+.task-lb-chart-section {
+  margin-bottom: 2.5rem;
+}
+
+/* ── Ranked list ── */
+
+.task-lb-table {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.task-lb-row {
+  background: #fff;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 0.6rem 0.85rem;
+  transition: box-shadow 0.15s;
+}
+
+.task-lb-row:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+}
+
+.task-lb-row--top3 {
+  border-color: #c8dff5;
+  background: #f8fbff;
+}
+
+.task-lb-row-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.task-lb-medal {
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.task-lb-rank {
+  display: inline-block;
+  min-width: 2rem;
+  font-weight: 700;
+  color: #6c757d;
+  font-size: 0.85rem;
+}
+
+.task-lb-name {
+  font-weight: 600;
+  color: #212529;
+  text-decoration: none;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-lb-name:hover {
+  color: #0d6efd;
+  text-decoration: underline;
+}
+
+.task-lb-count {
+  font-weight: 700;
+  color: #0d6efd;
+  font-size: 1rem;
+  white-space: nowrap;
+}
+
+.task-lb-milestone {
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #fff3cd;
+  color: #664d03;
+  border: 1px solid #ffda6a;
+  border-radius: 12px;
+  padding: 0.1rem 0.5rem;
+  white-space: nowrap;
+}
+
+/* Progress bar inside each row */
+.task-lb-bar-wrap {
+  height: 5px;
+  background: #e9ecef;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.task-lb-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #0d6efd, #6ea8fe);
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.task-lb-empty {
+  color: #6c757d;
+  font-style: italic;
+  font-size: 0.9rem;
+}
+
+/* ── Horizontal bar chart (monthly trend + category) ── */
+
+.task-lb-hbar-chart {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.task-lb-hbar-row {
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+@media (max-width: 480px) {
+  .task-lb-hbar-row {
+    grid-template-columns: 6rem 1fr;
+  }
+}
+
+.task-lb-hbar-label {
+  font-size: 0.85rem;
+  color: #495057;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-lb-hbar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #f0f3f5;
+  border-radius: 4px;
+  padding: 0 0.4rem;
+  min-height: 28px;
+}
+
+.task-lb-hbar {
+  height: 18px;
+  background: linear-gradient(90deg, #198754, #5cb85c);
+  border-radius: 3px;
+  min-width: 2px;
+  transition: width 0.4s ease;
+}
+
+.task-lb-hbar-val {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #495057;
+  white-space: nowrap;
+}
+
+/* =============================================================================
+   User profile task stats (hook_user_view)
+   ============================================================================= */
+
+.task-profile-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+  font-size: 0.9rem;
+}
+
+.task-profile-count {
+  color: #212529;
+}
+
+.task-profile-count strong {
+  font-size: 1.1rem;
+  color: #0d6efd;
+}
+
+.task-profile-milestone {
+  background: #fff3cd;
+  color: #664d03;
+  border: 1px solid #ffda6a;
+  border-radius: 12px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.task-profile-links {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: #6c757d;
+}
+
+.task-profile-links a {
+  color: #0d6efd;
+  text-decoration: none;
+}
+
+.task-profile-links a:hover {
+  text-decoration: underline;
+}

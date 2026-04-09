@@ -12,6 +12,13 @@ makehaven_tasks.facilitator:
   menu_name: main
   weight: 12
 
+makehaven_tasks.leaderboard:
+  title: 'Community leaderboard'
+  description: 'See top task contributors and completion stats.'
+  route_name: makehaven_tasks.leaderboard
+  menu_name: main
+  weight: 13
+
 makehaven_tasks.retroactive_log:
   title: 'Log something I already fixed'
   description: 'Retroactively log a task you completed on the spot.'

@@ -10,9 +10,59 @@ use Drupal\views\ViewExecutable;
  * Implements hook_entity_insert().
  */
 function makehaven_tasks_entity_insert(EntityInterface $entity) {
-  if ($entity->getEntityTypeId() === 'flagging' && $entity->getFlagId() === 'task_completed') {
-    _makehaven_tasks_notify_slack($entity);
+  if ($entity->getEntityTypeId() !== 'flagging' || $entity->getFlagId() !== 'task_completed') {
+    return;
   }
+
+  _makehaven_tasks_notify_slack($entity);
+  _makehaven_tasks_check_milestone($entity);
+  _makehaven_tasks_write_maintenance_log($entity);
+}
+
+/**
+ * Implements hook_user_view().
+ *
+ * Adds a "tasks completed" stats block to member profile pages (full view mode).
+ */
+function makehaven_tasks_user_view(array &$build, \Drupal\user\UserInterface $account, $display, $view_mode): void {
+  if ($view_mode !== 'full') {
+    return;
+  }
+
+  $count = _makehaven_tasks_user_completion_count((int) $account->id());
+  if ($count === 0 && !\Drupal::currentUser()->hasPermission('administer users')) {
+    return;
+  }
+
+  $milestone = \Drupal\makehaven_tasks\Controller\TaskLeaderboardController::milestoneLabel($count);
+  $lb_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.leaderboard')->toString();
+  $history_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.my_history')->toString();
+
+  $milestone_html = $milestone
+    ? '<span class="task-profile-milestone">' . htmlspecialchars($milestone, ENT_QUOTES, 'UTF-8') . '</span>'
+    : '';
+
+  $is_own = \Drupal::currentUser()->id() == $account->id();
+  $history_link = $is_own
+    ? ' · <a href="' . $history_url . '">View my history</a>'
+    : '';
+
+  $html = '<div class="task-profile-stats">'
+    . '<span class="task-profile-count">'
+    . '<strong>' . $count . '</strong> task' . ($count !== 1 ? 's' : '') . ' completed'
+    . '</span>'
+    . $milestone_html
+    . '<span class="task-profile-links">'
+    . '<a href="' . $lb_url . '">Community leaderboard</a>'
+    . $history_link
+    . '</span>'
+    . '</div>';
+
+  $build['task_stats'] = [
+    '#markup' => \Drupal\Core\Render\Markup::create($html),
+    '#weight' => 10,
+    '#attached' => ['library' => ['makehaven_tasks/task_actions']],
+  ];
 }
 
 /**
@@ -573,8 +623,9 @@ function _makehaven_tasks_notify_lead_due(NodeInterface $node) {
 /**
  * Implements hook_preprocess_views_view().
  *
- * Injects a member-facing how-it-works banner into the top of the main tasks
- * page so members understand what to do without reading documentation.
+ * Attaches the task CSS library and appends a staff-only link to the banner
+ * for users with elevated roles. The static banner content lives in the view's
+ * header area config (more reliable than preprocess injection).
  */
 function makehaven_tasks_preprocess_views_view(&$variables) {
   $view = $variables['view'];
@@ -582,40 +633,19 @@ function makehaven_tasks_preprocess_views_view(&$variables) {
     return;
   }
 
+  // Always attach the CSS library (the header area plugin doesn't do this).
+  $variables['#attached']['library'][] = 'makehaven_tasks/task_actions';
+
+  // Append a staff-only specialist tasks link into the existing header output.
   $account = \Drupal::currentUser();
   $staff_roles = ['administrator', 'manager', 'content_editor'];
-  $is_staff = (bool) array_intersect($staff_roles, $account->getRoles());
-
-  $mine_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.my_history')->toString();
-  $log_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.retroactive_log')->toString();
-
-  $extra_links = '';
-  if ($is_staff) {
+  if (array_intersect($staff_roles, $account->getRoles())) {
     $facilitator_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.facilitator')->toString();
-    $extra_links = ' · <a href="' . $facilitator_url . '">Specialist &amp; staff tasks</a>';
+    $variables['header']['staff_link'] = [
+      '#markup' => '<p class="task-how-links" style="margin-top:0.5rem">' .
+        '<a href="' . $facilitator_url . '">→ Specialist &amp; staff tasks</a></p>',
+    ];
   }
-
-  $banner = '
-<div class="task-how-it-works">
-  <p>These are real tasks that keep MakeHaven running — maintenance, cleaning, restocking, and more.
-     Pick something you can handle, <strong>claim it</strong> so others know you\'re on it, then
-     <strong>mark it done</strong> when finished. Your contributions are visible to the whole community.</p>
-  <ul class="task-how-steps">
-    <li>📋 <strong>Claim a task</strong> — reserves it so there\'s no duplication</li>
-    <li>✅ <strong>Mark complete</strong> — flags it done and notifies the team on Slack</li>
-    <li>🔁 <strong>Hand off</strong> — if you can\'t finish, leave a note so someone else can pick it up</li>
-  </ul>
-  <p class="task-how-links">
-    <a href="' . $mine_url . '">My completed tasks</a> ·
-    <a href="' . $log_url . '">Log something I already fixed</a>' . $extra_links . '
-  </p>
-</div>';
-
-  $variables['header']['task_intro'] = [
-    '#markup' => $banner,
-    '#weight' => -100,
-    '#attached' => ['library' => ['makehaven_tasks/task_actions']],
-  ];
 }
 
 /**
@@ -832,5 +862,126 @@ View Task: {$node_url}";
     catch (\Exception $e) {
       \Drupal::logger('makehaven_tasks')->error('Error posting to Slack: @error', ['@error' => $e->getMessage()]);
     }
+  }
+}
+
+// ── Recognition helpers ────────────────────────────────────────────────────
+
+/**
+ * Returns the total number of tasks a user has completed (flagging count).
+ */
+function _makehaven_tasks_user_completion_count(int $uid): int {
+  $table = \Drupal::entityTypeManager()
+    ->getDefinition('flagging')
+    ->getBaseTable();
+  return (int) \Drupal::database()
+    ->select($table, 'f')
+    ->condition('f.flag_id', 'task_completed')
+    ->condition('f.uid', $uid)
+    ->countQuery()
+    ->execute()
+    ->fetchField();
+}
+
+/**
+ * Posts a Slack milestone celebration when a user crosses 10/25/50/100 tasks.
+ */
+function _makehaven_tasks_check_milestone(\Drupal\flag\FlaggingInterface $flagging): void {
+  $user = $flagging->getOwner();
+  $uid = (int) $user->id();
+  $count = _makehaven_tasks_user_completion_count($uid);
+
+  $milestones = [10, 25, 50, 100];
+  if (!in_array($count, $milestones, TRUE)) {
+    return;
+  }
+
+  $webhook_url = \Drupal::config('slack_connector.settings')->get('webhook_url');
+  if (empty($webhook_url)) {
+    return;
+  }
+
+  $slack_id = _makehaven_tasks_get_slack_id($user);
+  $mention = $slack_id ? "<@{$slack_id}>" : '*' . $user->getDisplayName() . '*';
+
+  $messages = [
+    10  => "🎉 {$mention} just completed their *10th task*! Thank you for contributing to MakeHaven!",
+    25  => "🌟 Amazing! {$mention} has now completed *25 tasks*! MakeHaven runs because of people like you!",
+    50  => "🏆 *MILESTONE!* {$mention} has completed *50 tasks* — a true MakeHaven hero! 🙌",
+    100 => "👑 *LEGENDARY!* {$mention} has completed *100 tasks*! The MakeHaven Hall of Fame awaits!",
+  ];
+
+  $text = $messages[$count];
+  $lb_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.leaderboard', [], ['absolute' => TRUE])->toString();
+  $text .= "\n<{$lb_url}|View the leaderboard>";
+
+  try {
+    \Drupal::httpClient()->post($webhook_url, [
+      'headers' => ['Content-Type' => 'application/json'],
+      'json' => [
+        'channel' => '#tasks',
+        'blocks' => [[
+          'type' => 'section',
+          'text' => ['type' => 'mrkdwn', 'text' => $text],
+        ]],
+      ],
+    ]);
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('makehaven_tasks')->error('Milestone Slack notification failed: @error', ['@error' => $e->getMessage()]);
+  }
+}
+
+/**
+ * Creates a maintenance log entry when a task linked to equipment is completed.
+ *
+ * This gives the asset history a record that a maintenance task was done,
+ * without changing the asset's status (staff still controls that separately).
+ */
+function _makehaven_tasks_write_maintenance_log(\Drupal\flag\FlaggingInterface $flagging): void {
+  $node = $flagging->getFlaggable();
+  if (!$node instanceof \Drupal\node\NodeInterface || $node->bundle() !== 'task') {
+    return;
+  }
+
+  if (!$node->hasField('field_task_equipment') || $node->get('field_task_equipment')->isEmpty()) {
+    return;
+  }
+
+  $item_node = $node->get('field_task_equipment')->entity;
+  if (!$item_node instanceof \Drupal\node\NodeInterface) {
+    return;
+  }
+
+  $user = $flagging->getOwner();
+  $task_title = $node->label();
+
+  // Build a details string from the task body if present.
+  $details = '';
+  if ($node->hasField('body') && !$node->get('body')->isEmpty()) {
+    $details = strip_tags($node->get('body')->value ?? '');
+    $details = mb_substr($details, 0, 800);
+  }
+
+  try {
+    /** @var \Drupal\Core\Entity\EntityStorageInterface $storage */
+    $storage = \Drupal::entityTypeManager()->getStorage('asset_log_entry');
+    $entry = $storage->create([
+      'type'    => 'maintenance',
+      'asset'   => $item_node->id(),
+      'summary' => 'Task completed: ' . mb_substr($task_title, 0, 220),
+      'details' => $details ?: NULL,
+      'user_id' => $user->id(),
+      'status'  => TRUE,
+    ]);
+    // Prevent the asset_status entity hooks from double-logging this entry.
+    $entry->_skip_asset_status_log = TRUE;
+    $entry->save();
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('makehaven_tasks')->error(
+      'Could not write maintenance log for task @nid on item @item: @error',
+      ['@nid' => $node->id(), '@item' => $item_node->id(), '@error' => $e->getMessage()]
+    );
   }
 }
