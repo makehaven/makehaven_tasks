@@ -530,6 +530,142 @@ function _makehaven_tasks_notify_lead_due(NodeInterface $node) {
 }
 
 /**
+ * Implements hook_preprocess_views_view().
+ *
+ * Injects a member-facing how-it-works banner into the top of the main tasks
+ * page so members understand what to do without reading documentation.
+ */
+function makehaven_tasks_preprocess_views_view(&$variables) {
+  $view = $variables['view'];
+  if ($view->id() !== 'tasks' || $view->current_display !== 'page_tasks_interactive') {
+    return;
+  }
+
+  $account = \Drupal::currentUser();
+  $staff_roles = ['administrator', 'manager', 'content_editor'];
+  $is_staff = (bool) array_intersect($staff_roles, $account->getRoles());
+
+  $mine_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.my_history')->toString();
+  $log_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.retroactive_log')->toString();
+
+  $extra_links = '';
+  if ($is_staff) {
+    $facilitator_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.facilitator')->toString();
+    $extra_links = ' · <a href="' . $facilitator_url . '">Specialist &amp; staff tasks</a>';
+  }
+
+  $banner = '
+<div class="task-how-it-works">
+  <p>These are real tasks that keep MakeHaven running — maintenance, cleaning, restocking, and more.
+     Pick something you can handle, <strong>claim it</strong> so others know you\'re on it, then
+     <strong>mark it done</strong> when finished. Your contributions are visible to the whole community.</p>
+  <ul class="task-how-steps">
+    <li>📋 <strong>Claim a task</strong> — reserves it so there\'s no duplication</li>
+    <li>✅ <strong>Mark complete</strong> — flags it done and notifies the team on Slack</li>
+    <li>🔁 <strong>Hand off</strong> — if you can\'t finish, leave a note so someone else can pick it up</li>
+  </ul>
+  <p class="task-how-links">
+    <a href="' . $mine_url . '">My completed tasks</a> ·
+    <a href="' . $log_url . '">Log something I already fixed</a>' . $extra_links . '
+  </p>
+</div>';
+
+  $variables['header']['task_intro'] = [
+    '#markup' => $banner,
+    '#weight' => -100,
+    '#attached' => ['library' => ['makehaven_tasks/task_actions']],
+  ];
+}
+
+/**
+ * Implements hook_preprocess_views_view_unformatted().
+ *
+ * Adds the 'card' CSS class to every task list row so the makerspace_gin
+ * theme's auto-grid card layout kicks in without any View config changes.
+ */
+function makehaven_tasks_preprocess_views_view_unformatted(&$variables) {
+  if ($variables['view']->id() !== 'tasks') {
+    return;
+  }
+  foreach ($variables['rows'] as &$row) {
+    $row['attributes']->addClass('card');
+  }
+}
+
+/**
+ * Implements hook_preprocess_views_view_fields().
+ *
+ * Appends meta badges (status, claimed-by, estimated time, category) to each
+ * task card row so members can see at a glance who is working on what.
+ */
+function makehaven_tasks_preprocess_views_view_fields(&$variables) {
+  if ($variables['view']->id() !== 'tasks') {
+    return;
+  }
+
+  $nid = $variables['row']->nid ?? NULL;
+  if (!$nid) {
+    return;
+  }
+
+  $node = \Drupal\node\Entity\Node::load($nid);
+  if (!$node || $node->bundle() !== 'task') {
+    return;
+  }
+
+  $status = $node->hasField('field_task_status') ? $node->get('field_task_status')->value : 'open';
+  $claimed_uid = $node->hasField('field_task_claimed_by') && !$node->get('field_task_claimed_by')->isEmpty()
+    ? $node->get('field_task_claimed_by')->target_id
+    : NULL;
+
+  $badges = '';
+
+  // Status / claimed-by badge.
+  if ($status === 'in_progress' && $claimed_uid) {
+    $claimer = \Drupal\user\Entity\User::load($claimed_uid);
+    $name = $claimer ? htmlspecialchars($claimer->getDisplayName(), ENT_QUOTES, 'UTF-8') : 'someone';
+    $badges .= '<span class="task-card-badge task-card-inprogress">🔧 ' . $name . '</span>';
+  }
+  elseif ($status === 'incomplete') {
+    $badges .= '<span class="task-card-badge task-card-incomplete">⚠ Needs attention</span>';
+  }
+
+  // Estimated time.
+  if ($node->hasField('field_task_estimated_hours') && !$node->get('field_task_estimated_hours')->isEmpty()) {
+    $hours = (float) $node->get('field_task_estimated_hours')->value;
+    $label = $hours < 1 ? (int) ($hours * 60) . ' min' : number_format($hours, 1) . ' hr';
+    $badges .= '<span class="task-card-badge task-card-time">⏱ ~' . $label . '</span>';
+  }
+
+  // Category.
+  if ($node->hasField('field_task_category') && !$node->get('field_task_category')->isEmpty()) {
+    $cat = htmlspecialchars(ucfirst($node->get('field_task_category')->value), ENT_QUOTES, 'UTF-8');
+    $badges .= '<span class="task-card-badge task-card-category">' . $cat . '</span>';
+  }
+
+  if (!$badges) {
+    return;
+  }
+
+  // Inject as a fake field appended after all real fields.
+  $pseudo = new \stdClass();
+  $pseudo->handler = NULL;
+  $pseudo->inline = FALSE;
+  $pseudo->wrapper_element = 'div';
+  $pseudo->label = '';
+  $pseudo->label_html = '';
+  $pseudo->content = '<div class="task-card-meta">' . $badges . '</div>';
+  $pseudo->raw = NULL;
+  $pseudo->class = 'views-field-task-meta';
+  $pseudo->separator = '';
+  $pseudo->element_type = 'div';
+  $pseudo->empty = FALSE;
+  $pseudo->rewrite = FALSE;
+  $pseudo->wrapper_attributes = new \Drupal\Core\Template\Attribute(['class' => ['views-field', 'views-field-task-meta']]);
+  $variables['fields']['task_meta_badges'] = $pseudo;
+}
+
+/**
  * Sends a Slack notification when a task is completed.
  */
 function _makehaven_tasks_notify_slack($flagging) {
