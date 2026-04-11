@@ -6,7 +6,6 @@
  */
 
 use Drupal\Core\Field\BaseFieldDefinition;
-use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 
 /**
@@ -353,37 +352,53 @@ function makehaven_tasks_update_9003() {
  * Fix stale help text, unhide field_task_audience on the task form.
  */
 function makehaven_tasks_update_9004() {
-  // Fix the "Not yet implemented" lie on field_task_frequency.
-  $fc = FieldConfig::loadByName('node', 'task', 'field_task_frequency');
-  if ($fc) {
-    $fc->setDescription('How often this task recurs. Set a frequency and a Next Due date (leave Series Source empty) to create a recurring series — the cron job will generate new occurrences automatically.');
-    $fc->save();
-  }
+  $field_descriptions = [
+    'field.field.node.task.field_task_frequency' => 'How often this task recurs. Set a frequency and a Next Due date (leave Series Source empty) to create a recurring series — the cron job will generate new occurrences automatically.',
+    'field.field.node.task.field_task_next_due' => 'When the first (or next) occurrence should become active. Required for recurring tasks. Leave blank for one-off tasks.',
+    'field.field.node.task.field_task_series_source' => 'Set automatically on generated occurrences. Leave empty when creating a new recurring series template.',
+  ];
 
-  // Better guidance on field_task_next_due.
-  $nd = FieldConfig::loadByName('node', 'task', 'field_task_next_due');
-  if ($nd) {
-    $nd->setDescription('When the first (or next) occurrence should become active. Required for recurring tasks. Leave blank for one-off tasks.');
-    $nd->save();
-  }
-
-  // Clarify field_task_series_source.
-  $ss = FieldConfig::loadByName('node', 'task', 'field_task_series_source');
-  if ($ss) {
-    $ss->setDescription('Set automatically on generated occurrences. Leave empty when creating a new recurring series template.');
-    $ss->save();
+  foreach ($field_descriptions as $config_name => $description) {
+    $field_config = \Drupal::configFactory()->getEditable($config_name);
+    if (!$field_config->isNew()) {
+      $field_config->set('description', $description)->save();
+    }
   }
 
   // Unhide field_task_audience on the default task form display.
-  $form_display = \Drupal::entityTypeManager()
-    ->getStorage('entity_form_display')
-    ->load('node.task.default');
-  if ($form_display && !$form_display->getComponent('field_task_audience')) {
-    $form_display->setComponent('field_task_audience', [
-      'type' => 'options_select',
-      'weight' => 4,
-      'region' => 'content',
-    ])->save();
+  //
+  // Some environments have partially malformed form display config where the
+  // entity save path triggers a uasort() warning on a NULL component list.
+  // Update the raw config defensively so the hook remains idempotent and does
+  // not block later updates.
+  $form_display = \Drupal::configFactory()->getEditable('core.entity_form_display.node.task.default');
+  if (!$form_display->isNew()) {
+    $content = $form_display->get('content');
+    if (!is_array($content)) {
+      $content = [];
+    }
+
+    if (empty($content['field_task_audience'])) {
+      $content['field_task_audience'] = [
+        'type' => 'options_select',
+        'weight' => 4,
+        'region' => 'content',
+        'settings' => [],
+        'third_party_settings' => [],
+      ];
+      $form_display->set('content', $content);
+    }
+
+    $hidden = $form_display->get('hidden');
+    if (!is_array($hidden)) {
+      $hidden = [];
+    }
+    if (array_key_exists('field_task_audience', $hidden)) {
+      unset($hidden['field_task_audience']);
+      $form_display->set('hidden', $hidden);
+    }
+
+    $form_display->save();
   }
 
   return t('Fixed field help text and unhid field_task_audience on task form.');
