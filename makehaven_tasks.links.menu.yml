@@ -1,6 +1,6 @@
 makehaven_tasks.my_history:
-  title: 'My completed tasks'
-  description: 'View your personal task completion history.'
+  title: 'My tasks'
+  description: 'View your claimed and completed tasks.'
   route_name: makehaven_tasks.my_history
   menu_name: main
   weight: 11
@@ -25,6 +25,13 @@ makehaven_tasks.retroactive_log:
   route_name: makehaven_tasks.retroactive_log
   menu_name: main
   weight: 10
+
+makehaven_tasks.bank:
+  title: 'Task bank'
+  description: 'Browse and create tasks from reusable templates.'
+  route_name: makehaven_tasks.bank
+  menu_name: main
+  weight: 14
 
 makehaven_tasks.settings:
   title: 'MakeHaven Tasks'

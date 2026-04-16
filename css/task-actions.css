@@ -586,3 +586,568 @@
 .task-profile-links a:hover {
   text-decoration: underline;
 }
+
+/* ── Navigation additions ─────────────────────────────────────────────── */
+.task-back-link {
+  margin: 0.5rem 0 1rem;
+  font-size: 0.9rem;
+}
+.task-back-link a {
+  color: #0d6efd;
+  text-decoration: none;
+}
+.task-back-link a:hover {
+  text-decoration: underline;
+}
+
+/* ── Unified task toolbar (single bar: nav left, actions right) ───────── */
+.task-toolbar-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.85rem;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+}
+.task-toolbar-left {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+.task-toolbar-right {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+.task-nav-link {
+  display: inline-block;
+  padding: 0.35rem 0.7rem;
+  background: #fff;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  color: #212529;
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background .1s, color .1s, border-color .1s;
+}
+.task-nav-link:hover {
+  background: #0d6efd;
+  color: #fff;
+  border-color: #0d6efd;
+}
+/* Legacy class kept for subpages that still use it */
+.task-nav-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+}
+
+/* ── Task titles — pretty up ──────────────────────────────────────────── */
+body.node--type-task h1,
+body.node--type-task h1.title,
+article.node--type-task h1,
+article.node--type-task h1.title {
+  font-size: 2.25rem !important;
+  font-weight: 800 !important;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  text-align: left;
+  margin-bottom: 0.75rem;
+  background: linear-gradient(135deg, #1a1d21 0%, #0d6efd 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+}
+
+.view-tasks .views-field-title a,
+.view-tasks .views-field-title-1 a {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #1a1d21;
+  text-decoration: none;
+  line-height: 1.25;
+  display: inline-block;
+  padding-bottom: 0.15rem;
+  border-bottom: 2px solid transparent;
+  transition: border-color .15s;
+}
+.view-tasks .views-field-title a:hover,
+.view-tasks .views-field-title-1 a:hover {
+  border-bottom-color: #0d6efd;
+  color: #0d6efd;
+}
+
+.view-tasks .views-row.card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.1rem 1.2rem;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  transition: box-shadow .15s, transform .15s, border-color .15s;
+}
+.view-tasks .views-row.card:hover {
+  box-shadow: 0 4px 16px rgba(13,110,253,.1);
+  border-color: #b6d4fe;
+  transform: translateY(-1px);
+}
+
+/* Tasks list — transform the Views table into a responsive grid of cards.
+ * The view config renders as a <table>, so we use CSS display overrides
+ * to reflow it into cards. Safer than changing the view config. */
+.view-tasks .table-responsive {
+  overflow: visible;
+  background: transparent;
+}
+.view-tasks table.views-view-table,
+.view-tasks table.views-view-table thead,
+.view-tasks table.views-view-table tbody,
+.view-tasks table.views-view-table tr,
+.view-tasks table.views-view-table td {
+  display: block;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+.view-tasks table.views-view-table {
+  width: 100%;
+  box-shadow: none;
+}
+.view-tasks table.views-view-table thead {
+  /* Hide column headers entirely — each card is self-describing. */
+  display: none;
+}
+.view-tasks table.views-view-table tbody {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+.view-tasks table.views-view-table tbody tr {
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 1.1rem 1.2rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  transition: transform .15s, box-shadow .15s, border-color .15s;
+}
+.view-tasks table.views-view-table tbody tr:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(13,110,253,.12);
+  border-color: #b6d4fe;
+}
+.view-tasks table.views-view-table tbody tr.odd,
+.view-tasks table.views-view-table tbody tr.even {
+  background: #fff;
+}
+
+/* Cell layout inside a card */
+.view-tasks table.views-view-table tbody td {
+  padding: 0.3rem 0;
+  font-size: 0.9rem;
+  color: #495057;
+  min-height: 0;
+}
+.view-tasks table.views-view-table tbody td:empty {
+  display: none;
+}
+/* Priority — inline chip above the title. In flow (not absolute) so it
+ * doesn't overlap the title text no matter how long the label is. */
+.view-tasks table.views-view-table tbody td.views-field-field-task-priority {
+  order: -4;
+  align-self: flex-start;
+  padding: 0.2rem 0.6rem;
+  margin-bottom: 0.35rem;
+  background: #eef2ff;
+  color: #4338ca;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  border-radius: 999px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+/* Title — big and bold, right after priority */
+.view-tasks table.views-view-table tbody td.views-field-title,
+.view-tasks table.views-view-table tbody td.views-field-title-1 {
+  order: -3;
+  padding: 0 0 0.4rem;
+}
+.view-tasks table.views-view-table tbody td.views-field-title a,
+.view-tasks table.views-view-table tbody td.views-field-title-1 a {
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1.3;
+  padding: 0;
+  border: none;
+}
+/* Description (body) in a quieter tone, clamped to 3 lines */
+.view-tasks table.views-view-table tbody td.views-field-body {
+  order: -2;
+  font-size: 0.85rem;
+  color: #6c757d;
+  line-height: 1.4;
+  padding: 0 0 0.5rem;
+  max-height: 4.2em;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+/* Completed count is always 0 on open tasks — hide */
+.view-tasks table.views-view-table tbody td.views-field-flagging-tasks-flagged {
+  display: none;
+}
+/* Any numeric-only td that reads just "0" — hide (for legacy count columns) */
+.view-tasks table.views-view-table tbody td[class*="flag"]:not([class*="title"]) {
+  display: none;
+}
+/* Action column at the bottom of the card */
+.view-tasks table.views-view-table tbody td[class*="action"],
+.view-tasks table.views-view-table tbody td.views-field-nothing {
+  order: 10;
+  margin-top: auto;
+  padding-top: 0.75rem;
+}
+/* Our injected pseudo-fields should sit alongside the action row */
+.view-tasks .views-field-task-meta { order: 5; padding-top: 0.5rem; }
+.view-tasks .views-field-task-actions { order: 11; padding-top: 0.5rem; }
+
+/* ── Faces (avatar circles with label) ───────────────────────────────── */
+.task-face {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  text-decoration: none;
+  color: inherit;
+  vertical-align: middle;
+}
+.task-face:hover .task-face__name { color: #0d6efd; }
+
+.task-face__circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #e9ecef;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px #dee2e6;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.task-face--md .task-face__circle { width: 56px; height: 56px; }
+.task-face--sm .task-face__circle { width: 32px; height: 32px; }
+
+.task-face__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.task-face__initials {
+  font-weight: 700;
+  color: #495057;
+}
+.task-face--md .task-face__initials { font-size: 1.25rem; }
+.task-face--sm .task-face__initials { font-size: 0.8rem; }
+
+.task-face__meta {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+.task-face__label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6c757d;
+  font-weight: 600;
+}
+.task-face__name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #212529;
+}
+.task-face--sm .task-face__label { font-size: 0.62rem; }
+.task-face--sm .task-face__name { font-size: 0.8rem; }
+
+/* In-card face overrides — keep compact */
+.views-row.card .task-face--sm {
+  background: #f1f5ff;
+  padding: 0.25rem 0.55rem 0.25rem 0.3rem;
+  border-radius: 999px;
+  border: 1px solid #cfe2ff;
+}
+
+/* ── Completed panel ─────────────────────────────────────────────────── */
+.task-action-panel--done {
+  background: linear-gradient(135deg, #d1e7dd 0%, #badbcc 100%);
+  border: 1px solid #75b798;
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+.tap-done-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.tap-done-stamp {
+  margin-left: auto;
+  font-weight: 600;
+  color: #0f5132;
+  font-size: 0.95rem;
+}
+
+/* In-progress status row — let face sit alongside the badge */
+.tap-status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/* ── Flag "Mark as Done" — styled as a prominent green CTA button ────── */
+.flag-task-completed a.use-ajax,
+.flag.flag-task-completed a {
+  display: inline-block;
+  padding: 0.65rem 1.5rem;
+  background: #198754;
+  color: #fff !important;
+  font-size: 1rem;
+  font-weight: 700;
+  text-decoration: none !important;
+  border-radius: 8px;
+  border: 2px solid #198754;
+  cursor: pointer;
+  transition: background .15s, transform .1s, box-shadow .15s;
+  margin: 0.75rem 0;
+}
+.flag-task-completed a.use-ajax:hover,
+.flag.flag-task-completed a:hover {
+  background: #157347;
+  border-color: #157347;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(25,135,84,.3);
+}
+/* Unflag (re-open) variant — subdued style */
+.flag-task-completed.action-unflag a.use-ajax,
+.flag.flag-task-completed.action-unflag a {
+  background: transparent;
+  color: #dc3545 !important;
+  border-color: #dc3545;
+  font-size: 0.85rem;
+  padding: 0.45rem 1rem;
+}
+.flag-task-completed.action-unflag a.use-ajax:hover,
+.flag.flag-task-completed.action-unflag a:hover {
+  background: #dc3545;
+  color: #fff !important;
+}
+
+/* ── Task toolbar (back + edit) — sits above everything ──────────────── */
+.task-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0.5rem 0 1rem;
+  flex-wrap: wrap;
+}
+.task-back-link-inline {
+  font-size: 0.9rem;
+  color: #0d6efd;
+  text-decoration: none;
+}
+.task-back-link-inline:hover {
+  text-decoration: underline;
+}
+.tap-btn--edit {
+  background: #f8f9fa;
+  color: #212529 !important;
+  border: 1px solid #ced4da;
+  padding: 0.45rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 6px;
+  text-decoration: none !important;
+  transition: background .15s, border-color .15s;
+}
+.tap-btn--edit:hover {
+  background: #e9ecef;
+  border-color: #adb5bd;
+}
+
+/* ── Equipment/item page task panel ──────────────────────────────────── */
+.task-item-panel {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  margin: 1rem 0;
+}
+.task-item-open {
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+  color: #495057;
+}
+.task-item-open a {
+  color: #0d6efd;
+  text-decoration: none;
+}
+.task-item-open a:hover {
+  text-decoration: underline;
+}
+
+/* ── Task bank filter notice ─────────────────────────────────────────── */
+.task-bank-filter {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+/* ── Task Manager (/tasks/manage) ────────────────────────────────────── */
+.task-manager-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+.task-manager-filters label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #495057;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.task-manager-filters select {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #ced4da;
+  border-radius: 5px;
+  font-size: 0.85rem;
+  background: #fff;
+}
+.task-mgr-summary {
+  font-size: 0.85rem;
+  color: #6c757d;
+  margin: 0 0 0.5rem;
+}
+.task-manager-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.task-manager-table thead th {
+  background: #f8f9fa;
+  font-weight: 700;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #495057;
+  padding: 0.75rem 0.85rem;
+  border-bottom: 2px solid #dee2e6;
+  text-align: left;
+}
+.task-manager-table tbody td {
+  padding: 0.7rem 0.85rem;
+  vertical-align: middle;
+  border-top: 1px solid #f1f3f5;
+  font-size: 0.9rem;
+}
+.task-manager-table tbody tr:hover {
+  background: #f8fbff;
+}
+.task-mgr-title a {
+  font-weight: 600;
+  color: #1a1d21;
+  text-decoration: none;
+}
+.task-mgr-title a:hover {
+  color: #0d6efd;
+}
+.task-mgr-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  margin-right: 0.25rem;
+}
+.task-mgr-badge--done { background: #d1e7dd; color: #0f5132; }
+.task-mgr-badge--progress { background: #cfe2ff; color: #084298; }
+.task-mgr-badge--incomplete { background: #fff3cd; color: #664d03; }
+.task-mgr-badge--open { background: #e9ecef; color: #495057; }
+.task-mgr-badge--recurring { background: #e0cffc; color: #432874; }
+.task-mgr-badge--paused { background: #f8d7da; color: #842029; }
+.task-mgr-badge--bank { background: #eef2ff; color: #4338ca; }
+.task-mgr-badge--draft { background: #fef3c7; color: #92400e; }
+.task-mgr-sub {
+  display: block;
+  font-size: 0.75rem;
+  color: #6c757d;
+  margin-top: 0.15rem;
+}
+
+/* ── Priority color coding (applied via JS data-priority attribute) ──── */
+.views-field-field-task-priority[data-priority="1"],
+.task-badge--priority[data-priority="1"] {
+  background: #fee2e2 !important; color: #991b1b !important;
+}
+.views-field-field-task-priority[data-priority="2"],
+.task-badge--priority[data-priority="2"] {
+  background: #fef3c7 !important; color: #92400e !important;
+}
+.views-field-field-task-priority[data-priority="3"],
+.task-badge--priority[data-priority="3"] {
+  background: #d1fae5 !important; color: #065f46 !important;
+}
+.views-field-field-task-priority[data-priority="4"],
+.task-badge--priority[data-priority="4"] {
+  background: #e0e7ff !important; color: #3730a3 !important;
+}
+.views-field-field-task-priority[data-priority="na"],
+.task-badge--priority[data-priority="na"] {
+  background: #f3f4f6 !important; color: #6b7280 !important;
+}
+
+/* ── Hide the exposed status filter on /tasks (default "To Do" is fine) ── */
+.view-tasks .view-filters,
+.view-tasks .views-exposed-form {
+  display: none !important;
+}
+
+/* ── Card claim indicator (inside title cell on task cards) ──────────── */
+.task-card-claim {
+  margin-top: 0.5rem;
+}
+.task-card-claim .task-face--sm {
+  background: #f1f5ff;
+  padding: 0.25rem 0.55rem 0.25rem 0.3rem;
+  border-radius: 999px;
+  border: 1px solid #cfe2ff;
+}

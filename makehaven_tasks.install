@@ -403,3 +403,44 @@ function makehaven_tasks_update_9004() {
 
   return t('Fixed field help text and unhid field_task_audience on task form.');
 }
+
+/**
+ * Grant tiered task permissions to member, facilitator, and staff roles.
+ *
+ * Members:      create_from_bank (bank-only task creation)
+ * Facilitators: create_from_bank + create_task (ad-hoc task creation)
+ * Staff:        all of the above + manage_bank + manage_tasks
+ */
+function makehaven_tasks_update_9005() {
+  $role_storage = \Drupal::entityTypeManager()->getStorage('user_role');
+
+  // All logged-in users can create from bank. Granting on `authenticated`
+  // covers members, facilitators, and staff (they all inherit this role).
+  $auth = $role_storage->load('authenticated');
+  if ($auth) {
+    $auth->grantPermission('makehaven_tasks.create_from_bank');
+    $auth->save();
+  }
+
+  // Facilitators: can create from bank + create ad-hoc tasks.
+  $facilitator = $role_storage->load('facilitator');
+  if ($facilitator) {
+    $facilitator->grantPermission('makehaven_tasks.create_from_bank');
+    $facilitator->grantPermission('makehaven_tasks.create_task');
+    $facilitator->save();
+  }
+
+  // Staff roles: full task management.
+  foreach (['administrator', 'manager', 'content_editor'] as $rid) {
+    $role = $role_storage->load($rid);
+    if ($role) {
+      $role->grantPermission('makehaven_tasks.create_from_bank');
+      $role->grantPermission('makehaven_tasks.create_task');
+      $role->grantPermission('makehaven_tasks.manage_bank');
+      $role->grantPermission('makehaven_tasks.manage_tasks');
+      $role->save();
+    }
+  }
+
+  return t('Granted tiered task permissions to member, facilitator, and staff roles.');
+}

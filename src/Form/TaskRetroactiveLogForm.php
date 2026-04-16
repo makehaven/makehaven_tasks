@@ -88,11 +88,11 @@ class TaskRetroactiveLogForm extends FormBase {
     ];
 
     $form['completed_on'] = [
-      '#type' => 'datetime',
+      '#type' => 'date',
       '#title' => $this->t('When?'),
-      '#default_value' => \Drupal\Core\Datetime\DrupalDateTime::createFromTimestamp(time()),
+      '#default_value' => date('Y-m-d'),
       '#required' => TRUE,
-      '#description' => $this->t('Defaults to right now. You can set it to earlier today if you just forgot to log it.'),
+      '#description' => $this->t('Defaults to today. Change it if you fixed something earlier but forgot to log it.'),
     ];
 
     $form['submit'] = [
@@ -118,8 +118,15 @@ class TaskRetroactiveLogForm extends FormBase {
     $equipment_nid = $form_state->getValue('equipment');
     $description = $form_state->getValue('description');
 
-    /** @var \Drupal\Core\Datetime\DrupalDateTime $completed_on */
+    // Date-only picker returns a YYYY-MM-DD string.
     $completed_on = $form_state->getValue('completed_on');
+    $timestamp = time();
+    if (is_string($completed_on) && $completed_on !== '') {
+      $dt = \DateTime::createFromFormat('Y-m-d', $completed_on);
+      if ($dt) {
+        $timestamp = $dt->setTime(12, 0, 0)->getTimestamp();
+      }
+    }
 
     // Create the task node already published.
     $node = Node::create([
@@ -130,7 +137,7 @@ class TaskRetroactiveLogForm extends FormBase {
       'field_task_equipment' => ['target_id' => $equipment_nid],
       'field_task_frequency' => 'once',
       'field_task_status' => 'open',
-      'created' => $completed_on ? $completed_on->getTimestamp() : time(),
+      'created' => $timestamp,
     ]);
     $node->save();
 

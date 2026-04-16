@@ -75,36 +75,42 @@ function makehaven_tasks_user_view(array &$build, \Drupal\user\UserInterface $ac
  *  - Hiding fields that are never set at creation time (claimed_by, bank, etc.)
  *  - Removing standard Drupal noise (promote, sticky, path, sitemaps, redirects)
  */
-function makehaven_tasks_form_node_task_form_alter(array &$form, \Drupal\Core\Form\FormStateInterface $form_state, string $form_id): void {
-  // ── 1. Core fields — leave at top level, tighten weights ─────────────────
-  // title is already weight -5; body/equipment/audience come right after.
+function makehaven_tasks_form_node_form_alter(array &$form, \Drupal\Core\Form\FormStateInterface $form_state, string $form_id): void {
+  $form_object = $form_state->getFormObject();
+  if (!$form_object instanceof \Drupal\Core\Entity\EntityFormInterface) {
+    return;
+  }
+  $node = $form_object->getEntity();
+  if (!$node instanceof NodeInterface || $node->bundle() !== 'task') {
+    return;
+  }
+  // ── 1. Core fields — the essentials at the top ──────────────────────────
+  // title is already weight -5. Body (description) comes right after.
   if (isset($form['body'])) {
     $form['body']['#weight'] = 1;
   }
   if (isset($form['field_task_equipment'])) {
     $form['field_task_equipment']['#weight'] = 2;
   }
+  if (isset($form['field_task_priority'])) {
+    $form['field_task_priority']['#weight'] = 3;
+  }
   if (isset($form['field_task_audience'])) {
-    $form['field_task_audience']['#weight'] = 3;
-    // Help text so staff know what each option means.
+    $form['field_task_audience']['#weight'] = 4;
     $form['field_task_audience']['widget']['#description'] = t(
       'Who should see and claim this task? Choose "Staff only" for tasks requiring elevated access.'
     );
   }
   if (isset($form['field_task_category'])) {
-    $form['field_task_category']['#weight'] = 4;
-  }
-  if (isset($form['field_task_priority'])) {
-    $form['field_task_priority']['#weight'] = 5;
+    $form['field_task_category']['#weight'] = 5;
   }
 
-  // ── 2. "More details" collapsible group ───────────────────────────────────
+  // ── 2. "More details" — collapsed in main content (NOT in sidebar) ────
   $form['task_details'] = [
-    '#type'        => 'details',
-    '#title'       => t('More details'),
-    '#open'        => FALSE,
-    '#weight'      => 20,
-    '#group'       => 'advanced',
+    '#type'   => 'details',
+    '#title'  => t('More details'),
+    '#open'   => FALSE,
+    '#weight' => 20,
   ];
   foreach ([
     'field_task_estimated_hours',
@@ -112,24 +118,21 @@ function makehaven_tasks_form_node_task_form_alter(array &$form, \Drupal\Core\Fo
     'field_task_image',
     'field_task_video_url',
     'field_task_video_instruction',
+    'field_task_lead',
+    'field_task_group',
+    'field_task_bank',
   ] as $field) {
     if (isset($form[$field])) {
       $form[$field]['#group'] = 'task_details';
     }
   }
 
-  // Lead (assigned volunteer) belongs in details too.
-  if (isset($form['field_task_lead'])) {
-    $form['field_task_lead']['#group'] = 'task_details';
-  }
-
-  // ── 3. "Recurring series" collapsible group ───────────────────────────────
+  // ── 3. "Recurring series" — collapsed in main content ─────────────────
   $form['task_recurring'] = [
     '#type'   => 'details',
     '#title'  => t('Recurring series'),
     '#open'   => FALSE,
     '#weight' => 21,
-    '#group'  => 'advanced',
   ];
   foreach ([
     'field_task_frequency',
@@ -142,30 +145,88 @@ function makehaven_tasks_form_node_task_form_alter(array &$form, \Drupal\Core\Fo
     }
   }
 
-  // ── 4. Hide fields that shouldn't be set at create/edit time ─────────────
-  $hide = [
-    'field_task_status',      // auto-set to 'open' on publish via hook_node_presave
-    'field_task_claimed_by',  // set when a member claims the task
-    'field_task_bank',        // internal categorisation, not needed per-task
-    'comment_node_task',      // comment settings widget — not relevant here
-  ];
-  foreach ($hide as $field) {
+  // Next due: render as date-only via #after_build that strips the time input.
+  if (isset($form['field_task_next_due']['widget'][0]['value'])) {
+    $form['field_task_next_due']['widget'][0]['value']['#date_time_element'] = 'none';
+    $form['field_task_next_due']['widget'][0]['value']['#date_time_format'] = '';
+    $form['field_task_next_due']['widget'][0]['value']['#after_build'][] = '_makehaven_tasks_datetime_date_only';
+    $form['field_task_next_due']['widget'][0]['value']['#description'] = t('Date only — tasks do not track a time of day.');
+  }
+
+  // ── 4. Hide fields that shouldn't be set at create/edit time ──────────
+  foreach (['field_task_status', 'field_task_claimed_by', 'comment_node_task'] as $field) {
     if (isset($form[$field])) {
       $form[$field]['#access'] = FALSE;
     }
   }
 
+  // ── 5. Collapse the Gin sidebar "Advanced" section by default ─────────
+  if (isset($form['advanced'])) {
+    $form['advanced']['#open'] = FALSE;
+  }
+
+  // ── 6. Permission-based field visibility ───────────────────────────────
+  // Only staff (manage_bank) sees recurring series config and bank checkbox.
+  // Facilitators see the simple create form. Members can't reach this form
+  // at all (they use bank or retroactive log).
+  $account = \Drupal::currentUser();
+  if (!$account->hasPermission('makehaven_tasks.manage_bank')) {
+    $form['task_recurring']['#access'] = FALSE;
+    if (isset($form['field_task_bank'])) {
+      $form['field_task_bank']['#access'] = FALSE;
+    }
+  }
+
+  // ── 7. Pre-populate equipment from query param (?field_task_equipment=NID)
+  // This supports "New task for this tool" links from equipment pages.
+  if ($node->isNew() && isset($form['field_task_equipment'])) {
+    $equip_nid = \Drupal::request()->query->get('field_task_equipment');
+    if ($equip_nid && is_numeric($equip_nid)) {
+      $item = \Drupal\node\Entity\Node::load((int) $equip_nid);
+      if ($item && $item->bundle() === 'item') {
+        $form['field_task_equipment']['widget'][0]['target_id']['#default_value'] = $item;
+      }
+    }
+  }
+
   // ── 5. Remove standard Drupal node-form noise ─────────────────────────────
-  $noise = ['promote', 'sticky', 'path', 'simple_sitemap', 'url_redirects'];
-  foreach ($noise as $key) {
+  // Some of these elements (url_redirects, simple_sitemap) are injected by
+  // other modules AFTER this form_alter runs, so isset() is unreliable. We use
+  // an #after_build to hide them once the whole form tree is assembled.
+  $form['#after_build'][] = '_makehaven_tasks_hide_form_noise';
+  if (isset($form['revision_information'])) {
+    $form['revision_information']['#access'] = FALSE;
+  }
+}
+
+/**
+ * #after_build: hide common node-form sidebar noise that isn't relevant for
+ * the task workflow. Runs after all other modules have added their children.
+ */
+function _makehaven_tasks_hide_form_noise(array $form, \Drupal\Core\Form\FormStateInterface $form_state): array {
+  $noise_keys = [
+    'promote', 'sticky', 'path', 'simple_sitemap', 'simple_sitemap_default',
+    'url_redirects', 'redirect', 'menu',
+  ];
+  foreach ($noise_keys as $key) {
     if (isset($form[$key])) {
       $form[$key]['#access'] = FALSE;
     }
   }
-  // The revision fieldset lives inside the sidebar "advanced" group.
-  if (isset($form['revision_information'])) {
-    $form['revision_information']['#access'] = FALSE;
+  return $form;
+}
+
+/**
+ * #after_build callback that strips the time sub-element from a datetime form
+ * element, leaving only the date picker. The submitted value ends up with a
+ * default time of 12:00:00, which is acceptable — tasks are day-granular.
+ */
+function _makehaven_tasks_datetime_date_only(array $element, \Drupal\Core\Form\FormStateInterface $form_state): array {
+  if (isset($element['time'])) {
+    $element['time']['#access'] = FALSE;
+    $element['time']['#value'] = '12:00:00';
   }
+  return $element;
 }
 
 /**
@@ -190,12 +251,68 @@ function makehaven_tasks_views_query_alter(ViewExecutable $view, $query) {
   if ($view->id() !== 'tasks') {
     return;
   }
+  if (!$query instanceof \Drupal\views\Plugin\views\query\Sql) {
+    return;
+  }
+
   $account = \Drupal::currentUser();
   $staff_roles = ['administrator', 'manager', 'content_editor'];
   $is_staff = (bool) array_intersect($staff_roles, $account->getRoles());
   if (!$is_staff) {
-    $query->addWhere(0, 'node__field_task_audience.field_task_audience_value', 'staff_only', '<>');
+    // Ensure the audience table is joined — the view doesn't reference it
+    // directly, so we must add the relationship before filtering on it.
+    $join = \Drupal\views\Views::pluginManager('join')->createInstance('standard', [
+      'table' => 'node__field_task_audience',
+      'field' => 'entity_id',
+      'left_table' => 'node_field_data',
+      'left_field' => 'nid',
+      'type' => 'LEFT',
+      'extra' => [
+        ['field' => 'deleted', 'value' => 0, 'numeric' => TRUE],
+      ],
+    ]);
+    $audience_alias = $query->ensureTable('node__field_task_audience', NULL, $join);
+    $query->addWhereExpression(0,
+      "($audience_alias.field_task_audience_value IS NULL OR $audience_alias.field_task_audience_value <> 'staff_only')"
+    );
   }
+
+  // Note: "no priority goes last" is applied via hook_query_TAG_alter on the
+  // views_tasks query tag below, because Views' SQL orderby can't take raw
+  // SQL expressions without escaping them as column names.
+}
+
+/**
+ * Implements hook_query_TAG_alter() for the "views_tasks" tag.
+ *
+ * Prepends an expression order so tasks with no priority sort to the bottom.
+ * Runs on the raw Select query (after Views has built it), where we can add
+ * expression orderBy clauses that the database layer will pass through.
+ */
+function makehaven_tasks_query_views_tasks_alter(\Drupal\Core\Database\Query\AlterableInterface $query): void {
+  if (!$query instanceof \Drupal\Core\Database\Query\SelectInterface) {
+    return;
+  }
+  // Find the priority table alias used in this query.
+  $tables = $query->getTables();
+  $priority_alias = NULL;
+  foreach ($tables as $alias => $info) {
+    if (($info['table'] ?? NULL) === 'node__field_task_priority') {
+      $priority_alias = $alias;
+      break;
+    }
+  }
+  if (!$priority_alias) {
+    return;
+  }
+
+  // Prepend an "IS NULL" order so NULL priorities end up last while the
+  // existing ASC sort on the value still applies to non-NULL rows.
+  $expr = "({$priority_alias}.field_task_priority_value IS NULL OR {$priority_alias}.field_task_priority_value = '')";
+  $existing = &$query->getOrderBy();
+  $new_order = ['mh_priority_null_last' => 'ASC'] + $existing;
+  $existing = $new_order;
+  $query->addExpression($expr, 'mh_priority_null_last');
 }
 
 /**
@@ -218,22 +335,122 @@ function makehaven_tasks_node_presave(NodeInterface $node) {
  * Injects the status action UI (claim / handoff) on full task node pages.
  */
 function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display, $view_mode) {
-  if ($node->bundle() !== 'task' || $view_mode !== 'full') {
+  if ($view_mode !== 'full') {
     return;
   }
+
+  // Equipment / item pages: inject a "Create task" link for staff so they can
+  // quickly spin up a task from the bank for this specific tool.
+  if ($node->bundle() === 'item') {
+    _makehaven_tasks_inject_item_links($build, $node);
+    return;
+  }
+
+  if ($node->bundle() !== 'task') {
+    return;
+  }
+
+  $build['#attached']['library'][] = 'makehaven_tasks/task_actions';
+  $nid = $node->id();
+
+  // ── 1. Always-run cleanup: back link, hide empty fields, hide recurring ──
+
+  $tasks_url = \Drupal\Core\Url::fromUserInput('/tasks')->toString();
+
+  // Staff edit link — Gin hides the local task tabs; give staff an explicit
+  // edit button so they don't need to hunt for the pencil icon.
+  $edit_html = '';
+  if ($node->access('update')) {
+    $edit_url = \Drupal\Core\Url::fromRoute('entity.node.edit_form', ['node' => $nid])->toString();
+    $edit_html = '<a href="' . $edit_url . '" class="tap-btn tap-btn--edit">✏ Edit task</a>';
+  }
+
+  $build['task_toolbar'] = [
+    '#markup' => '<div class="task-toolbar">'
+      . '<a href="' . $tasks_url . '" class="task-back-link-inline">← Back to all tasks</a>'
+      . $edit_html
+      . '</div>',
+    '#weight' => -20,
+  ];
+
+  // Suppress raw field label/value pairs the action panel shows better.
+  // Use unset() instead of #access=FALSE — Gin theme can ignore #access.
+  foreach (['field_task_status', 'field_task_claimed_by'] as $field) {
+    unset($build[$field]);
+  }
+
+  // Remove empty fields — Gin renders labels even when values are blank.
+  $hide_when_empty = [
+    'field_task_lead', 'field_task_equipment', 'field_task_group',
+    'field_task_bank', 'field_task_image', 'field_task_estimated_hours',
+    'field_task_instructions', 'field_task_video_url',
+    'field_task_video_instruction', 'field_task_category',
+    'field_task_audience', 'field_task_priority',
+  ];
+  foreach ($hide_when_empty as $field) {
+    if ($node->hasField($field) && $node->get($field)->isEmpty()) {
+      unset($build[$field]);
+    }
+  }
+
+  // Hide recurring-series fields on non-recurring tasks. "once" is not
+  // a recurring frequency, so exclude it.
+  $freq = $node->hasField('field_task_frequency') ? $node->get('field_task_frequency')->value : NULL;
+  $is_recurring = $freq && $freq !== 'once';
+  $recurring_fields = [
+    'field_task_frequency', 'field_task_next_due',
+    'field_task_series_source', 'field_task_series_paused',
+  ];
+  foreach ($recurring_fields as $field) {
+    if (!$is_recurring) {
+      unset($build[$field]);
+    }
+  }
+
+  // Also hide task_bank — it's a dead feature with no UI.
+  unset($build['field_task_bank']);
+
+  // Move the Flag "Mark as Done" button to sit inside the action panel area.
+  if (isset($build['flag_task_completed'])) {
+    $build['flag_task_completed']['#weight'] = 5;
+  }
+
+  // Suppress duplicate flag link from node links area.
+  if (isset($build['links']) && is_array($build['links'])) {
+    foreach (array_keys($build['links']) as $lkey) {
+      if (is_string($lkey) && strpos($lkey, 'flag') !== FALSE) {
+        $build['links'][$lkey]['#access'] = FALSE;
+      }
+    }
+  }
+
+  // ── 2. Completion state — if already done, show "Completed by" panel ──
+
+  $flag_service = \Drupal::service('flag');
+  $flag = $flag_service->getFlagById('task_completed');
+  $completion_flagging = $flag ? $flag_service->getFlagging($flag, $node) : NULL;
+
+  if ($completion_flagging) {
+    $completer_uid = (int) $completion_flagging->get('uid')->target_id;
+    $when = \Drupal::service('date.formatter')->format($completion_flagging->get('created')->value, 'medium');
+    $face = _makehaven_tasks_render_face($completer_uid, (string) t('Completed'), 'md');
+    $build['task_completed_panel'] = [
+      '#markup' => '<div class="task-action-panel task-action-panel--done">'
+        . '<div class="tap-done-row">' . $face
+        . '<span class="tap-done-stamp">✓ ' . htmlspecialchars((string) $when, ENT_QUOTES) . '</span>'
+        . '</div></div>',
+      '#weight' => -10,
+    ];
+    return;
+  }
+
+  // ── 3. Active task — claim / handoff / mark-done action panel ──
+
   if (!\Drupal::currentUser()->isAuthenticated()) {
     return;
   }
 
-  // Don't show actions if the task is already flagged complete.
-  $flag_service = \Drupal::service('flag');
-  $flag = $flag_service->getFlagById('task_completed');
-  if ($flag && $flag_service->getFlagging($flag, $node)) {
-    return;
-  }
-
   $status = $node->get('field_task_status')->value ?? 'open';
-  $nid = $node->id();
   $current_uid = \Drupal::currentUser()->id();
   $token = \Drupal::csrfToken()->get("task-action/{$nid}");
 
@@ -245,32 +462,45 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
   $claimed_by = $node->get('field_task_claimed_by')->target_id;
   $is_claimed_by_me = $claimed_by && $claimed_by == $current_uid;
 
-  // ---- Status context row ----
-  $status_html = '';
-
+  // Check whether the current user is allowed to claim based on audience.
   $audience = $node->hasField('field_task_audience') ? $node->get('field_task_audience')->value : NULL;
+  $account = \Drupal::currentUser();
+  $user_roles = $account->getRoles();
+  $staff_roles = ['administrator', 'manager', 'content_editor'];
+  $is_staff = (bool) array_intersect($staff_roles, $user_roles);
+  $can_claim = TRUE;
+  if ($audience === 'staff_only' && !$is_staff) {
+    $can_claim = FALSE;
+  }
+  if ($audience === 'badge_holders' && !$is_staff && !in_array('facilitator', $user_roles)) {
+    $can_claim = FALSE;
+  }
+
+  // Status context row.
+  $status_html = '';
   if ($audience === 'badge_holders') {
     $status_html .= '<span class="tap-badge tap-badge--badge">🔑 Requires a badge</span>';
   }
   elseif ($audience === 'staff_only') {
     $status_html .= '<span class="tap-badge tap-badge--staff">🔒 Staff only</span>';
   }
-
   if ($status === 'incomplete') {
     $status_html .= '<span class="tap-badge tap-badge--incomplete">⚠ Needs attention</span>';
   }
   elseif ($status === 'in_progress') {
-    $claimer_name = '';
+    $status_html .= '<span class="tap-badge tap-badge--inprogress">🔧 In progress</span>';
     if ($claimed_by) {
-      $claimer = \Drupal\user\Entity\User::load($claimed_by);
-      $claimer_name = $claimer ? htmlspecialchars($claimer->getDisplayName(), ENT_QUOTES, 'UTF-8') : '';
+      $status_html .= _makehaven_tasks_render_face((int) $claimed_by, (string) t('Claimed by'), 'md');
     }
-    $status_html .= '<span class="tap-badge tap-badge--inprogress">🔧 In progress' . ($claimer_name ? " — {$claimer_name}" : '') . '</span>';
   }
 
-  // ---- Primary actions ----
+  // Primary actions — only show claim button if user is allowed.
   $primary_html = '';
-  if ($status === 'incomplete') {
+  if (!$can_claim) {
+    $label = $audience === 'staff_only' ? 'Staff only' : 'Requires a badge';
+    $primary_html .= '<span class="tap-btn tap-btn--claimed">' . $label . '</span>';
+  }
+  elseif ($status === 'incomplete') {
     $primary_html .= '<a href="' . $claim_url . '" class="tap-btn tap-btn--claim">✋ Pick this up</a>';
   }
   elseif (!$is_claimed_by_me) {
@@ -279,10 +509,8 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
   else {
     $primary_html .= '<span class="tap-btn tap-btn--claimed">✓ You\'ve claimed this</span>';
   }
-  // The Flag module's "Mark as Done" button renders just after this block at
-  // weight 5. CSS targets .flag-task-completed to style it as a green CTA.
 
-  // ---- Secondary actions ----
+  // Secondary actions.
   $secondary_html = '';
   if ($status === 'incomplete') {
     $secondary_html .= '<a href="' . $handoff_url . '" class="tap-link">Update handoff note</a>';
@@ -290,7 +518,6 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
   else {
     $secondary_html .= '<a href="' . $handoff_url . '" class="tap-link tap-link--danger">I couldn\'t finish — hand off</a>';
   }
-
   if ($node->hasField('field_task_equipment') && !$node->get('field_task_equipment')->isEmpty()) {
     $item_nid = $node->get('field_task_equipment')->target_id;
     $log_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.retroactive_log', [], [
@@ -299,7 +526,7 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
     $secondary_html .= '<a href="' . $log_url . '" class="tap-link">Log a different fix for this tool</a>';
   }
 
-  // ---- Assemble panel ----
+  // Assemble the action panel.
   $actions_html = '<div class="task-action-panel">';
   if ($status_html) {
     $actions_html .= '<div class="tap-status-row">' . $status_html . '</div>';
@@ -311,27 +538,7 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
   $build['task_status_actions'] = [
     '#markup' => $actions_html,
     '#weight' => -10,
-    '#attached' => ['library' => ['makehaven_tasks/task_actions']],
   ];
-
-  // Suppress raw field label/value pairs that our action block shows better.
-  foreach (['field_task_status', 'field_task_claimed_by', 'field_task_frequency'] as $field) {
-    if (isset($build[$field])) {
-      $build[$field]['#access'] = FALSE;
-    }
-  }
-
-  // Move the Flag "Mark as Done" button to just after our action block so the
-  // page reads: status info → claim → mark done → comment.
-  if (isset($build['flag_task_completed'])) {
-    $build['flag_task_completed']['#weight'] = 5;
-  }
-
-  // Suppress the plain-text flag link that appears in the node links area
-  // (below the comment form) — it duplicates the button above.
-  if (isset($build['links']['flag'])) {
-    $build['links']['flag']['#access'] = FALSE;
-  }
 }
 
 /**
@@ -344,7 +551,13 @@ function makehaven_tasks_node_links_alter(array &$links, NodeInterface $node, ar
   if ($node->bundle() !== 'task' || $context['view_mode'] !== 'full') {
     return;
   }
-  unset($links['flag']);
+  // Flag module may register the link under different keys depending on
+  // module version; drop anything starting with "flag".
+  foreach (array_keys($links) as $key) {
+    if (strpos($key, 'flag') === 0) {
+      unset($links[$key]);
+    }
+  }
 }
 
 /**
@@ -558,6 +771,144 @@ function _makehaven_tasks_notify_handoff($node, $note, $from_uid, $reassign_uid)
 }
 
 /**
+ * Renders a member "face" (avatar circle + name) for a given uid.
+ *
+ * Mirrors the appointment_facilitator pattern: pulls field_member_photo off
+ * the user's main profile, falls back to initials in a gray circle.
+ *
+ * @param int $uid
+ *   The user ID.
+ * @param string $label
+ *   Role label shown beside the name (e.g. "Claimed", "Completed").
+ * @param string $size
+ *   'sm' (32px, for cards) or 'md' (56px, for full node view).
+ *
+ * @return string
+ *   Rendered HTML, or empty string if uid is invalid.
+ */
+function _makehaven_tasks_render_face(int $uid, string $label, string $size = 'md'): string {
+  if ($uid <= 0) {
+    return '';
+  }
+  $user = \Drupal\user\Entity\User::load($uid);
+  if (!$user) {
+    return '';
+  }
+  $display_name = $user->getDisplayName();
+
+  $img_html = '';
+  $profile = NULL;
+  if (\Drupal::entityTypeManager()->hasDefinition('profile')) {
+    $profiles = \Drupal::entityTypeManager()->getStorage('profile')
+      ->loadByProperties(['uid' => $uid, 'type' => 'main', 'status' => 1]);
+    $profile = reset($profiles);
+  }
+  if ($profile && $profile->hasField('field_member_photo') && !$profile->get('field_member_photo')->isEmpty()) {
+    $fid = (int) $profile->get('field_member_photo')->target_id;
+    $file = \Drupal::entityTypeManager()->getStorage('file')->load($fid);
+    if ($file) {
+      $url = \Drupal::service('file_url_generator')->generateString($file->getFileUri());
+      $img_html = '<img src="' . htmlspecialchars($url, ENT_QUOTES) . '" alt="'
+        . htmlspecialchars($display_name, ENT_QUOTES) . '" class="task-face__img">';
+    }
+  }
+
+  if (!$img_html) {
+    $words = explode(' ', trim($display_name));
+    $initials = '';
+    foreach ($words as $w) {
+      $initials .= mb_strtoupper(mb_substr($w, 0, 1));
+    }
+    $initials = htmlspecialchars(mb_substr($initials, 0, 2), ENT_QUOTES);
+    $img_html = '<span class="task-face__initials">' . $initials . '</span>';
+  }
+
+  $profile_url = '/user/' . $uid;
+  $name_html = htmlspecialchars($display_name, ENT_QUOTES);
+  $label_html = htmlspecialchars($label, ENT_QUOTES);
+  $size_class = 'task-face--' . ($size === 'sm' ? 'sm' : 'md');
+
+  return '<a href="' . $profile_url . '" class="task-face ' . $size_class . '" title="' . $label_html . ': ' . $name_html . '">'
+    . '<span class="task-face__circle">' . $img_html . '</span>'
+    . '<span class="task-face__meta">'
+    . '<span class="task-face__label">' . $label_html . '</span>'
+    . '<span class="task-face__name">' . $name_html . '</span>'
+    . '</span>'
+    . '</a>';
+}
+
+/**
+ * Injects task-related links on equipment/item node pages.
+ *
+ * Staff see:
+ *  - "Create task from bank" (filtered to this equipment)
+ *  - "Create new task" (pre-selects this equipment)
+ *  - Open tasks for this equipment (if any)
+ */
+function _makehaven_tasks_inject_item_links(array &$build, NodeInterface $item_node): void {
+  $account = \Drupal::currentUser();
+  $can_bank = $account->hasPermission('makehaven_tasks.create_from_bank');
+  $can_create = $account->hasPermission('makehaven_tasks.create_task');
+  if (!$can_bank && !$can_create) {
+    return;
+  }
+
+  $nid = $item_node->id();
+  $links = [];
+
+  // Bank link filtered to this equipment (members + facilitators + staff).
+  if ($can_bank) {
+    $bank_count = (int) \Drupal::entityQuery('node')
+      ->condition('type', 'task')
+      ->condition('field_task_bank', 'task_bank')
+      ->condition('field_task_equipment', $nid)
+      ->accessCheck(FALSE)
+      ->count()
+      ->execute();
+
+    if ($bank_count > 0) {
+      $bank_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.bank', [], [
+        'query' => ['equipment' => $nid],
+      ])->toString();
+      $bank_label = "📦 Task bank ({$bank_count} template" . ($bank_count > 1 ? 's' : '') . ')';
+      $links[] = '<a href="' . $bank_url . '" class="task-staff-btn task-staff-btn--primary">' . $bank_label . '</a>';
+    }
+  }
+
+  // Direct create with equipment pre-selected (facilitators + staff only).
+  if ($can_create) {
+    $create_url = \Drupal\Core\Url::fromRoute('node.add', ['node_type' => 'task'], [
+      'query' => ['field_task_equipment' => $nid],
+    ])->toString();
+    $links[] = '<a href="' . $create_url . '" class="task-staff-btn">+ New task for this tool</a>';
+  }
+
+  // Show open tasks for this equipment.
+  $open_tasks = _makehaven_tasks_open_tasks_for_item((int) $nid);
+  $open_html = '';
+  if (!empty($open_tasks)) {
+    $items = [];
+    foreach ($open_tasks as $task_nid => $title) {
+      $url = \Drupal\Core\Url::fromRoute('entity.node.canonical', ['node' => $task_nid])->toString();
+      $items[] = '<a href="' . $url . '">' . htmlspecialchars($title, ENT_QUOTES) . '</a>';
+    }
+    $open_html = '<div class="task-item-open">'
+      . '<strong>' . count($open_tasks) . ' open task' . (count($open_tasks) !== 1 ? 's' : '') . ':</strong> '
+      . implode(' · ', $items)
+      . '</div>';
+  }
+
+  $build['task_item_actions'] = [
+    '#markup' => '<div class="task-item-panel">'
+      . '<div class="task-staff-bar">' . implode('', $links) . '</div>'
+      . $open_html
+      . '</div>',
+    '#weight' => 90,
+    '#attached' => ['library' => ['makehaven_tasks/task_actions']],
+  ];
+}
+
+/**
  * Gets a user's Slack ID from their profile entity.
  *
  * field_member_slack_id_number lives on the profile entity, not the user.
@@ -739,27 +1090,39 @@ function makehaven_tasks_preprocess_views_view(&$variables) {
   // Always attach the CSS library (the header area plugin doesn't do this).
   $variables['#attached']['library'][] = 'makehaven_tasks/task_actions';
 
-  // Inject staff action bar (create task + recurring tasks + facilitator link).
   $account = \Drupal::currentUser();
-  $staff_roles = ['administrator', 'manager', 'content_editor'];
-  $is_staff = (bool) array_intersect($staff_roles, $account->getRoles());
-
-  if ($is_staff && $account->hasPermission('create task content')) {
-    $create_url = \Drupal\Core\Url::fromRoute('node.add', ['node_type' => 'task'])->toString();
-    $recurring_url = \Drupal\Core\Url::fromUri('internal:/tasks/manager')->toString();
-    $facilitator_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.facilitator')->toString();
-
-    $variables['header']['staff_actions'] = [
-      '#markup' => \Drupal\Core\Render\Markup::create(
-        '<div class="task-staff-bar">'
-        . '<a href="' . $create_url . '" class="task-staff-btn task-staff-btn--primary">+ Create task</a>'
-        . '<a href="' . $recurring_url . '" class="task-staff-btn">⟳ Manage recurring tasks</a>'
-        . '<a href="' . $facilitator_url . '" class="task-staff-btn">🔧 Specialist tasks</a>'
-        . '</div>'
-      ),
-      '#weight' => -50,
-    ];
+  if (!$account->isAuthenticated()) {
+    return;
   }
+
+  // Single unified toolbar: nav links left, action buttons right.
+  $left = '';
+  $right = '';
+
+  // Left side — member navigation (daily-use links).
+  $left .= '<a href="' . \Drupal\Core\Url::fromRoute('makehaven_tasks.my_history')->toString() . '" class="task-nav-link">📋 My tasks</a>';
+  $left .= '<a href="' . \Drupal\Core\Url::fromRoute('makehaven_tasks.leaderboard')->toString() . '" class="task-nav-link">🏆 Leaderboard</a>';
+  if ($account->hasPermission('makehaven_tasks.create_from_bank')) {
+    $left .= '<a href="' . \Drupal\Core\Url::fromRoute('makehaven_tasks.bank')->toString() . '" class="task-nav-link">📦 Task bank</a>';
+  }
+
+  // Right side — action buttons (permission-gated).
+  if ($account->hasPermission('makehaven_tasks.create_task')) {
+    $right .= '<a href="' . \Drupal\Core\Url::fromRoute('node.add', ['node_type' => 'task'])->toString() . '" class="task-staff-btn task-staff-btn--primary">+ Create task</a>';
+  }
+  if ($account->hasPermission('makehaven_tasks.manage_tasks')) {
+    $right .= '<a href="' . \Drupal\Core\Url::fromRoute('makehaven_tasks.manage')->toString() . '" class="task-staff-btn">⚙ Manager</a>';
+  }
+
+  $variables['header']['task_toolbar'] = [
+    '#markup' => \Drupal\Core\Render\Markup::create(
+      '<nav class="task-toolbar-bar" aria-label="Task navigation">'
+      . '<div class="task-toolbar-left">' . $left . '</div>'
+      . ($right ? '<div class="task-toolbar-right">' . $right . '</div>' : '')
+      . '</nav>'
+    ),
+    '#weight' => -60,
+  ];
 }
 
 /**
@@ -775,6 +1138,59 @@ function makehaven_tasks_preprocess_views_view_unformatted(&$variables) {
   foreach ($variables['rows'] as &$row) {
     $row['attributes']->addClass('card');
   }
+}
+
+/**
+ * Implements hook_preprocess_views_view_table().
+ *
+ * Adds data attributes to each table row with claim/status info so the
+ * client-side JS can render face badges on the task cards.
+ */
+function makehaven_tasks_preprocess_views_view_table(&$variables) {
+  $view = $variables['view'];
+  if ($view->id() !== 'tasks') {
+    return;
+  }
+
+  $claim_data = [];
+  foreach ($view->result as $index => $result_row) {
+    $nid = $result_row->nid ?? NULL;
+    if (!$nid) {
+      continue;
+    }
+    $node = \Drupal\node\Entity\Node::load($nid);
+    if (!$node || $node->bundle() !== 'task') {
+      continue;
+    }
+
+    $status = $node->hasField('field_task_status') ? ($node->get('field_task_status')->value ?? 'open') : 'open';
+    $entry = ['status' => $status];
+
+    if ($status === 'in_progress' && $node->hasField('field_task_claimed_by') && !$node->get('field_task_claimed_by')->isEmpty()) {
+      $claimer = $node->get('field_task_claimed_by')->entity;
+      if ($claimer) {
+        $entry['claimer'] = $claimer->getDisplayName();
+        $entry['claimer_url'] = '/user/' . $claimer->id();
+        // Get initials for avatar.
+        $words = explode(' ', trim($claimer->getDisplayName()));
+        $initials = '';
+        foreach ($words as $w) {
+          $initials .= mb_strtoupper(mb_substr($w, 0, 1));
+        }
+        $entry['initials'] = mb_substr($initials, 0, 2);
+      }
+    }
+
+    if ($node->hasField('field_task_estimated_hours') && !$node->get('field_task_estimated_hours')->isEmpty()) {
+      $hours = (float) $node->get('field_task_estimated_hours')->value;
+      $entry['est'] = $hours < 1 ? (int) ($hours * 60) . ' min' : number_format($hours, 1) . ' hr';
+    }
+
+    $claim_data[$index] = $entry;
+  }
+
+  // Pass data to JS via drupalSettings.
+  $variables['#attached']['drupalSettings']['makehavenTasks']['cardMeta'] = $claim_data;
 }
 
 /**
@@ -807,9 +1223,7 @@ function makehaven_tasks_preprocess_views_view_fields(&$variables) {
 
   // Status / claimed-by badge.
   if ($status === 'in_progress' && $claimed_uid) {
-    $claimer = \Drupal\user\Entity\User::load($claimed_uid);
-    $name = $claimer ? htmlspecialchars($claimer->getDisplayName(), ENT_QUOTES, 'UTF-8') : 'someone';
-    $badges .= '<span class="task-card-badge task-card-inprogress">🔧 ' . $name . '</span>';
+    $badges .= _makehaven_tasks_render_face((int) $claimed_uid, (string) t('Claimed'), 'sm');
   }
   elseif ($status === 'incomplete') {
     $badges .= '<span class="task-card-badge task-card-incomplete">⚠ Needs attention</span>';

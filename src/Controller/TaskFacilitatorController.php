@@ -48,6 +48,11 @@ class TaskFacilitatorController extends ControllerBase {
       }
     }
 
+    $tasks_url = Url::fromUserInput('/tasks')->toString();
+    $build['nav'] = [
+      '#markup' => '<div class="task-back-link"><a href="' . $tasks_url . '">← Back to all tasks</a></div>',
+      '#attached' => ['library' => ['makehaven_tasks/task_actions']],
+    ];
     $build['intro'] = [
       '#markup' => '<p>Tasks that need <strong>specific expertise</strong> — badge-required maintenance and staff-only procedures.</p>',
     ];

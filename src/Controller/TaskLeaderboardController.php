@@ -150,9 +150,12 @@ class TaskLeaderboardController extends ControllerBase {
 
     // Page intro.
     $log_url = Url::fromRoute('makehaven_tasks.retroactive_log')->toString();
+    $mine_url = Url::fromRoute('makehaven_tasks.my_history')->toString();
+    $out .= '<div class="task-back-link"><a href="/tasks">← Back to all tasks</a></div>';
     $out .= '<div class="task-lb-intro">'
       . '<p>Every completed task keeps MakeHaven running. Here are the community members '
-      . 'who\'ve contributed the most. <a href="' . $log_url . '">Log something you fixed</a> · '
+      . 'who\'ve contributed the most. <a href="' . $mine_url . '">My tasks</a> · '
+      . '<a href="' . $log_url . '">Log something you fixed</a> · '
       . '<a href="/tasks">Browse open tasks</a></p>'
       . '</div>';
 

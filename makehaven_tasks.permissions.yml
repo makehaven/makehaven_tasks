@@ -1,0 +1,15 @@
+makehaven_tasks.create_from_bank:
+  title: 'Create tasks from the task bank'
+  description: 'Instantiate a new task from a pre-approved bank template.'
+
+makehaven_tasks.create_task:
+  title: 'Create ad-hoc tasks'
+  description: 'Create new task nodes directly (not just from bank templates).'
+
+makehaven_tasks.manage_bank:
+  title: 'Manage the task bank'
+  description: 'Add/remove templates in the task bank and set up recurring series.'
+
+makehaven_tasks.manage_tasks:
+  title: 'Access the task manager'
+  description: 'View the staff task manager dashboard with filters and bulk operations.'

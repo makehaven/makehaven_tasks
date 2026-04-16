@@ -18,7 +18,7 @@ makehaven_tasks.my_history:
   path: '/tasks/mine'
   defaults:
     _controller: '\Drupal\makehaven_tasks\Controller\TaskPersonalHistoryController::page'
-    _title: 'My completed tasks'
+    _title: 'My tasks'
   requirements:
     _user_is_logged_in: 'TRUE'
 
@@ -63,6 +63,31 @@ makehaven_tasks.leaderboard:
     _title: 'Task Leaderboard'
   requirements:
     _access: 'TRUE'
+
+makehaven_tasks.manage:
+  path: '/tasks/manage'
+  defaults:
+    _controller: '\Drupal\makehaven_tasks\Controller\TaskManagerController::page'
+    _title: 'Task Manager'
+  requirements:
+    _permission: 'makehaven_tasks.manage_tasks'
+
+makehaven_tasks.bank:
+  path: '/tasks/bank'
+  defaults:
+    _controller: '\Drupal\makehaven_tasks\Controller\TaskBankController::listPage'
+    _title: 'Task Bank'
+  requirements:
+    _permission: 'makehaven_tasks.create_from_bank'
+
+makehaven_tasks.bank_create:
+  path: '/tasks/bank/{node}/create'
+  defaults:
+    _controller: '\Drupal\makehaven_tasks\Controller\TaskBankController::createFromBank'
+    _title: 'Create task from bank'
+  requirements:
+    _permission: 'makehaven_tasks.create_from_bank'
+    node: '\d+'
 
 makehaven_tasks.display_fragment:
   path: '/display/tasks/fragment/{code_word}'

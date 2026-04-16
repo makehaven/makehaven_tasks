@@ -3,3 +3,5 @@ task_actions:
   css:
     component:
       css/task-actions.css: {}
+  js:
+    js/task-priority.js: { attributes: { defer: true } }
