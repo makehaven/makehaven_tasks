@@ -21,6 +21,15 @@
     var data = meta.cardMeta[index];
     if (!data) return;
 
+    // Thumbnail: prepend as a <td> so the existing .views-field-task-card-image
+    // CSS rules (order, banner sizing, category tints) apply cleanly.
+    if (data.image_html && !tr.querySelector('.views-field-task-card-image')) {
+      var thumbTd = document.createElement('td');
+      thumbTd.className = 'views-field views-field-task-card-image';
+      thumbTd.innerHTML = data.image_html;
+      tr.insertBefore(thumbTd, tr.firstChild);
+    }
+
     var titleTd = tr.querySelector('.views-field-title');
     if (!titleTd) return;
 

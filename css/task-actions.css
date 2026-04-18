@@ -825,6 +825,129 @@ article.node--type-task h1.title {
 .view-tasks .views-field-task-meta { order: 5; padding-top: 0.5rem; }
 .view-tasks .views-field-task-actions { order: 11; padding-top: 0.5rem; }
 
+/* Card thumbnail / category placeholder — banner strip at top of each card.
+ * Selector mirrors the earlier reset rule's specificity so the negative
+ * margins can pull the image to the card edges (reset sets margin: 0 on
+ * all .view-tasks table td). */
+.view-tasks table.views-view-table tbody td.views-field-task-card-image {
+  order: -6;
+  padding: 0;
+  margin: -1.1rem -1.2rem 0.8rem -1.2rem;
+  overflow: hidden;
+  border-top-left-radius: 14px;
+  border-top-right-radius: 14px;
+}
+.view-tasks .task-card-thumb {
+  width: 100%;
+  aspect-ratio: 3 / 1;
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8f9fa;
+}
+.view-tasks .task-card-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.view-tasks .task-card-thumb__icon {
+  font-size: 3rem;
+  line-height: 1;
+}
+/* ── Equipment card on task detail page ─────────────────────────────── */
+.task-equipment-card {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.6rem 0.75rem;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  text-decoration: none !important;
+  color: inherit;
+  transition: box-shadow .15s, border-color .15s, transform .1s;
+}
+.task-equipment-card:hover {
+  box-shadow: 0 4px 12px rgba(13,110,253,.1);
+  border-color: #b6d4fe;
+  transform: translateY(-1px);
+}
+.task-equipment-card__thumb {
+  flex: 0 0 72px;
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #4338ca;
+}
+.task-equipment-card__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.task-equipment-card__placeholder {
+  font-size: 2rem;
+  line-height: 1;
+}
+.task-equipment-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.task-equipment-card__name {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #0d6efd;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.task-equipment-card:hover .task-equipment-card__name {
+  text-decoration: underline;
+}
+.task-equipment-card__area {
+  font-size: 0.82rem;
+  color: #6c757d;
+}
+
+/* Category tints — subtle colored gradients so cards are scannable at a glance */
+.view-tasks .task-card-thumb--cat-cleaning    { background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); }
+.view-tasks .task-card-thumb--cat-maintenance { background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%); }
+.view-tasks .task-card-thumb--cat-inspection  { background: linear-gradient(135deg, #fef3c7 0%, #fcd34d 100%); }
+.view-tasks .task-card-thumb--cat-restocking  { background: linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%); }
+.view-tasks .task-card-thumb--cat-other       { background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%); }
+
+/* ── Click-anywhere: stretched-link overlay on the title anchor ──────── */
+/* The title's <a> spans the whole card via ::after. Inner interactive
+ * elements (action buttons, face links) sit above via z-index. */
+.view-tasks table.views-view-table tbody tr {
+  position: relative;
+}
+.view-tasks table.views-view-table tbody td.views-field-title a::after,
+.view-tasks table.views-view-table tbody td.views-field-title-1 a::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+/* Everything clickable inside the card needs to ride above the overlay */
+.view-tasks table.views-view-table tbody .views-field-task-actions,
+.view-tasks table.views-view-table tbody .views-field-task-actions *,
+.view-tasks table.views-view-table tbody .views-field-task-meta .task-face,
+.view-tasks table.views-view-table tbody .task-card-actions,
+.view-tasks table.views-view-table tbody .task-card-actions * {
+  position: relative;
+  z-index: 2;
+}
+
 /* ── Faces (avatar circles with label) ───────────────────────────────── */
 .task-face {
   display: inline-flex;

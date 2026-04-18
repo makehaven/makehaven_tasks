@@ -269,9 +269,11 @@ class TaskBankKernelTest extends KernelTestBase {
 
     $this->assertArrayHasKey('task_status_actions', $build,
       'Action panel should be present for authenticated users.');
-    $markup = (string) $build['task_status_actions']['#markup'];
-    $this->assertStringContainsString('Claim task', $markup,
-      'Action panel should contain the Claim button.');
+    // The panel is a nested container render array; the Claim button lives
+    // inside the primary row as raw markup.
+    $primary_markup = (string) $build['task_status_actions']['primary']['content']['#markup'];
+    $this->assertStringContainsString('Claim task', $primary_markup,
+      'Primary row of action panel should contain the Claim button.');
   }
 
   /**

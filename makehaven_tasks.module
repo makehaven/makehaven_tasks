@@ -66,6 +66,76 @@ function makehaven_tasks_user_view(array &$build, \Drupal\user\UserInterface $ac
 }
 
 /**
+ * Implements hook_entity_form_display_alter().
+ *
+ * Surfaces fields on the task form that the exported display keeps hidden:
+ *  - field_task_required_badge (shown conditionally via #states in form_alter)
+ *  - field_task_category (used by the card thumbnail to pick an emoji/tint)
+ */
+function makehaven_tasks_entity_form_display_alter(\Drupal\Core\Entity\Display\EntityFormDisplayInterface $form_display, array $context): void {
+  if ($context['entity_type'] !== 'node' || $context['bundle'] !== 'task') {
+    return;
+  }
+
+  // Adjust weights on already-visible components so the quick-create flow
+  // reads top-to-bottom: title → body → image → equipment → priority →
+  // audience → required_badge (conditionally). Weights must be set on the
+  // form display (not via form_alter) because EntityFormDisplay::processForm
+  // re-applies the display's weights late in the render pipeline.
+  $weight_overrides = [
+    'body' => 1,
+    'field_task_image' => 2,
+    'field_task_equipment' => 3,
+    'field_task_priority' => 4,
+    'field_task_audience' => 5,
+  ];
+  foreach ($weight_overrides as $name => $weight) {
+    $component = $form_display->getComponent($name);
+    if ($component) {
+      $component['weight'] = $weight;
+      $form_display->setComponent($name, $component);
+    }
+  }
+
+  // Expose fields that the exported display keeps hidden. Each widget type
+  // matches the underlying field storage. Weights are chosen so the fields
+  // appear in a sensible order inside the "More details" collapse.
+  $hidden_to_expose = [
+    'field_task_required_badge' => ['type' => 'options_select',   'weight' => 6, 'settings' => []],
+    'field_task_category'       => ['type' => 'options_buttons',  'weight' => 7, 'settings' => []],
+    'field_task_estimated_hours' => ['type' => 'number',          'weight' => 8, 'settings' => ['placeholder' => '']],
+    'field_task_instructions'   => ['type' => 'text_textarea',    'weight' => 9, 'settings' => ['rows' => 5, 'placeholder' => '']],
+    'field_task_video_url'      => ['type' => 'link_default',     'weight' => 10, 'settings' => ['placeholder_url' => '', 'placeholder_title' => '']],
+    'field_task_group'          => ['type' => 'options_select',   'weight' => 11, 'settings' => []],
+  ];
+  foreach ($hidden_to_expose as $name => $options) {
+    $form_display->setComponent($name, $options + [
+      'region' => 'content',
+      'third_party_settings' => [],
+    ]);
+  }
+}
+
+/**
+ * Implements hook_module_implements_alter().
+ *
+ * field_group moves its own form_alter to the end so it can populate
+ * `$form['#fieldgroups']`. We push ours past it so we can rework those
+ * groups — renaming the legacy "Advanced" fieldset to "More details" and
+ * splitting the recurring-series fields into their own collapse.
+ *
+ * Because our module name (makehaven_tasks) sorts after field_group, our
+ * module_implements_alter runs last, so this move wins.
+ */
+function makehaven_tasks_module_implements_alter(array &$implementations, string $hook): void {
+  if ($hook === 'form_alter' && isset($implementations['makehaven_tasks'])) {
+    $group = $implementations['makehaven_tasks'];
+    unset($implementations['makehaven_tasks']);
+    $implementations['makehaven_tasks'] = $group;
+  }
+}
+
+/**
  * Implements hook_form_BASE_FORM_ID_alter() for node_task_form.
  *
  * Simplifies the task create/edit form by:
@@ -84,64 +154,93 @@ function makehaven_tasks_form_node_form_alter(array &$form, \Drupal\Core\Form\Fo
   if (!$node instanceof NodeInterface || $node->bundle() !== 'task') {
     return;
   }
-  // ── 1. Core fields — the essentials at the top ──────────────────────────
-  // title is already weight -5. Body (description) comes right after.
-  if (isset($form['body'])) {
-    $form['body']['#weight'] = 1;
-  }
-  if (isset($form['field_task_equipment'])) {
-    $form['field_task_equipment']['#weight'] = 2;
-  }
-  if (isset($form['field_task_priority'])) {
-    $form['field_task_priority']['#weight'] = 3;
-  }
+  // ── 1. Core fields — widget-level tweaks ───────────────────────────────
+  // Field WEIGHTS are set in makehaven_tasks_entity_form_display_alter() —
+  // EntityFormDisplay::processForm re-applies the display's weights late in
+  // the render pipeline, so form_alter weight edits don't stick.
   if (isset($form['field_task_audience'])) {
-    $form['field_task_audience']['#weight'] = 4;
     $form['field_task_audience']['widget']['#description'] = t(
       'Who should see and claim this task? Choose "Staff only" for tasks requiring elevated access.'
     );
   }
+  // Required badge — shown only when audience = badge_holders. Without a
+  // selected badge, the UI falls back to facilitator-only claim (existing
+  // behavior) so the field stays optional at the form level.
+  if (isset($form['field_task_required_badge'])) {
+    $form['field_task_required_badge']['#states'] = [
+      'visible' => [
+        ':input[name="field_task_audience"]' => ['value' => 'badge_holders'],
+      ],
+    ];
+    $form['field_task_required_badge']['widget']['#description'] = t(
+      'Which badge is required? Members holding this badge (or facilitators/staff) can claim the task. Leave empty to require facilitator/staff only.'
+    );
+  }
   if (isset($form['field_task_category'])) {
-    $form['field_task_category']['#weight'] = 5;
+    $form['field_task_category']['widget']['#description'] = t(
+      'Optional — drives the icon and color on the task card (🧹 Cleaning, 🔧 Maintenance, 🔍 Inspection, 📦 Restocking, 📝 Other). Left blank, we guess from the title.'
+    );
+  }
+  // Image mobile capture — wire up the #process callback on the file widget.
+  if (isset($form['field_task_image']['widget'][0])) {
+    $form['field_task_image']['widget'][0]['#process'][] = '_makehaven_tasks_task_image_mobile_capture';
   }
 
-  // ── 2. "More details" — collapsed in main content (NOT in sidebar) ────
-  $form['task_details'] = [
-    '#type'   => 'details',
-    '#title'  => t('More details'),
-    '#open'   => FALSE,
-    '#weight' => 20,
-  ];
-  foreach ([
-    'field_task_estimated_hours',
-    'field_task_instructions',
-    'field_task_image',
-    'field_task_video_url',
-    'field_task_video_instruction',
-    'field_task_lead',
-    'field_task_group',
-    'field_task_bank',
-  ] as $field) {
-    if (isset($form[$field])) {
-      $form[$field]['#group'] = 'task_details';
+  // ── 2. Group membership ────────────────────────────────────────────────
+  // Rework the legacy "Advanced" field_group fieldset (defined in the
+  // exported form display) into two groups — "More details" for optional
+  // authoring fields and "Recurring series" for cron-driven fields. This
+  // runs AFTER field_group's own form_alter (see module_implements_alter
+  // above) so `$form['#fieldgroups']` is populated before we touch it.
+  if (isset($form['#fieldgroups']['group_advanced'])) {
+    $recurring_fields = [
+      'field_task_frequency',
+      'field_task_next_due',
+      'field_task_series_paused',
+      'field_task_series_source',
+    ];
+    $prepend = [
+      'field_task_category',
+      'field_task_estimated_hours',
+      'field_task_instructions',
+      'field_task_video_url',
+    ];
+
+    /** @var \stdClass $advanced */
+    $advanced = $form['#fieldgroups']['group_advanced'];
+    $advanced->label = (string) t('More details');
+    $advanced->weight = 20;
+    // Render as a native <details> element — closed by default. The exported
+    // config uses `format_type: fieldset` + `formatter: collapsed`, which
+    // renders an open fieldset in this theme/version.
+    $advanced->format_type = 'details';
+    $advanced->format_settings = ($advanced->format_settings ?? []) + [
+      'classes' => '',
+      'id' => '',
+      'description' => '',
+      'required_fields' => TRUE,
+      'label_as_html' => FALSE,
+    ];
+    $advanced->format_settings['open'] = FALSE;
+    $advanced->children = array_values(array_diff($advanced->children, $recurring_fields));
+    $advanced->children = array_values(array_unique(array_merge($prepend, $advanced->children)));
+
+    // Build the recurring-series group from a clone of the reworked advanced
+    // group so required properties (format_type, format_settings, etc.) are
+    // preserved.
+    $recurring = clone $advanced;
+    $recurring->group_name = 'group_recurring';
+    $recurring->label = (string) t('Recurring series');
+    $recurring->children = $recurring_fields;
+    $recurring->weight = 21;
+    $form['#fieldgroups']['group_recurring'] = $recurring;
+
+    // Refresh the child → group lookup so field_group wraps correctly.
+    foreach ($prepend as $child) {
+      $form['#group_children'][$child] = 'group_advanced';
     }
-  }
-
-  // ── 3. "Recurring series" — collapsed in main content ─────────────────
-  $form['task_recurring'] = [
-    '#type'   => 'details',
-    '#title'  => t('Recurring series'),
-    '#open'   => FALSE,
-    '#weight' => 21,
-  ];
-  foreach ([
-    'field_task_frequency',
-    'field_task_next_due',
-    'field_task_series_paused',
-    'field_task_series_source',
-  ] as $field) {
-    if (isset($form[$field])) {
-      $form[$field]['#group'] = 'task_recurring';
+    foreach ($recurring_fields as $child) {
+      $form['#group_children'][$child] = 'group_recurring';
     }
   }
 
@@ -165,15 +264,17 @@ function makehaven_tasks_form_node_form_alter(array &$form, \Drupal\Core\Form\Fo
     $form['advanced']['#open'] = FALSE;
   }
 
+
   // ── 6. Permission-based field visibility ───────────────────────────────
   // Only staff (manage_bank) sees recurring series config and bank checkbox.
   // Facilitators see the simple create form. Members can't reach this form
   // at all (they use bank or retroactive log).
   $account = \Drupal::currentUser();
   if (!$account->hasPermission('makehaven_tasks.manage_bank')) {
-    $form['task_recurring']['#access'] = FALSE;
-    if (isset($form['field_task_bank'])) {
-      $form['field_task_bank']['#access'] = FALSE;
+    foreach (['field_task_frequency', 'field_task_next_due', 'field_task_series_paused', 'field_task_series_source', 'field_task_bank'] as $f) {
+      if (isset($form[$f])) {
+        $form[$f]['#access'] = FALSE;
+      }
     }
   }
 
@@ -225,6 +326,21 @@ function _makehaven_tasks_datetime_date_only(array $element, \Drupal\Core\Form\F
   if (isset($element['time'])) {
     $element['time']['#access'] = FALSE;
     $element['time']['#value'] = '12:00:00';
+  }
+  return $element;
+}
+
+/**
+ * #process callback on the task image managed_file element.
+ *
+ * Adds the `capture` and `accept` attributes to the file input so mobile
+ * browsers offer the camera directly alongside the photo library. Desktop
+ * browsers ignore `capture` and fall back to a normal file picker.
+ */
+function _makehaven_tasks_task_image_mobile_capture(array &$element, \Drupal\Core\Form\FormStateInterface $form_state, array &$complete_form): array {
+  if (isset($element['upload'])) {
+    $element['upload']['#attributes']['accept'] = 'image/*';
+    $element['upload']['#attributes']['capture'] = 'environment';
   }
   return $element;
 }
@@ -327,6 +443,39 @@ function makehaven_tasks_node_presave(NodeInterface $node) {
   if ($node->isPublished() && $node->get('field_task_status')->isEmpty()) {
     $node->set('field_task_status', 'open');
   }
+  // Auto-guess category from title keywords when the creator didn't pick one.
+  // Keeps the quick-create flow tight while still feeding the card display.
+  if ($node->hasField('field_task_category') && $node->get('field_task_category')->isEmpty()) {
+    $guess = _makehaven_tasks_guess_category((string) $node->label());
+    if ($guess) {
+      $node->set('field_task_category', $guess);
+    }
+  }
+}
+
+/**
+ * Heuristic category inference from a task title.
+ *
+ * Returns 'cleaning', 'maintenance', 'inspection', 'restocking', or NULL
+ * when nothing matches. Keyword lists are deliberately short — we'd rather
+ * leave the category empty (falling back to 📝) than mis-categorize.
+ */
+function _makehaven_tasks_guess_category(string $title): ?string {
+  $haystack = ' ' . strtolower($title) . ' ';
+  $rules = [
+    'cleaning'    => ['clean', 'sweep', 'mop', 'wipe', 'dust', 'trash', 'vacuum', 'tidy', 'declutter'],
+    'maintenance' => ['fix', 'repair', 'replace', 'sharpen', 'lubricate', 'oil', 'tighten', 'calibrate', 'adjust', 'service', 'sort'],
+    'inspection'  => ['inspect', 'audit', 'check ', 'test ', 'verify', 'review'],
+    'restocking'  => ['restock', 'refill', 'reorder', 'stock '],
+  ];
+  foreach ($rules as $category => $keywords) {
+    foreach ($keywords as $kw) {
+      if (strpos($haystack, $kw) !== FALSE) {
+        return $category;
+      }
+    }
+  }
+  return NULL;
 }
 
 /**
@@ -393,6 +542,17 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
     }
   }
 
+  // Rich equipment card — replace the bare link with an image+name+area
+  // mini-card so members can spot the tool at a glance from the task page.
+  if ($node->hasField('field_task_equipment') && !$node->get('field_task_equipment')->isEmpty()) {
+    $item = $node->get('field_task_equipment')->entity;
+    if ($item instanceof NodeInterface) {
+      $build['field_task_equipment'] = [
+        '#markup' => \Drupal\Core\Render\Markup::create(_makehaven_tasks_equipment_card_html($item)),
+      ];
+    }
+  }
+
   // Hide recurring-series fields on non-recurring tasks. "once" is not
   // a recurring frequency, so exclude it.
   $freq = $node->hasField('field_task_frequency') ? $node->get('field_task_frequency')->value : NULL;
@@ -409,11 +569,6 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
 
   // Also hide task_bank — it's a dead feature with no UI.
   unset($build['field_task_bank']);
-
-  // Move the Flag "Mark as Done" button to sit inside the action panel area.
-  if (isset($build['flag_task_completed'])) {
-    $build['flag_task_completed']['#weight'] = 5;
-  }
 
   // Suppress duplicate flag link from node links area.
   if (isset($build['links']) && is_array($build['links'])) {
@@ -468,18 +623,29 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
   $user_roles = $account->getRoles();
   $staff_roles = ['administrator', 'manager', 'content_editor'];
   $is_staff = (bool) array_intersect($staff_roles, $user_roles);
+  $required_badge_term = NULL;
+  if ($node->hasField('field_task_required_badge') && !$node->get('field_task_required_badge')->isEmpty()) {
+    $required_badge_term = $node->get('field_task_required_badge')->entity;
+  }
   $can_claim = TRUE;
   if ($audience === 'staff_only' && !$is_staff) {
     $can_claim = FALSE;
   }
-  if ($audience === 'badge_holders' && !$is_staff && !in_array('facilitator', $user_roles)) {
-    $can_claim = FALSE;
+  elseif ($audience === 'badge_holders' && !$is_staff && !in_array('facilitator', $user_roles)) {
+    // Regular members may claim only if they hold the specific required badge.
+    if (!$required_badge_term
+      || !_makehaven_tasks_user_has_badge((int) $current_uid, (int) $required_badge_term->id())) {
+      $can_claim = FALSE;
+    }
   }
 
   // Status context row.
   $status_html = '';
   if ($audience === 'badge_holders') {
-    $status_html .= '<span class="tap-badge tap-badge--badge">🔑 Requires a badge</span>';
+    $badge_label = $required_badge_term
+      ? '🔑 Requires: ' . htmlspecialchars($required_badge_term->label(), ENT_QUOTES)
+      : '🔑 Requires a badge';
+    $status_html .= '<span class="tap-badge tap-badge--badge">' . $badge_label . '</span>';
   }
   elseif ($audience === 'staff_only') {
     $status_html .= '<span class="tap-badge tap-badge--staff">🔒 Staff only</span>';
@@ -497,7 +663,15 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
   // Primary actions — only show claim button if user is allowed.
   $primary_html = '';
   if (!$can_claim) {
-    $label = $audience === 'staff_only' ? 'Staff only' : 'Requires a badge';
+    if ($audience === 'staff_only') {
+      $label = 'Staff only';
+    }
+    elseif ($required_badge_term) {
+      $label = 'Needs ' . htmlspecialchars($required_badge_term->label(), ENT_QUOTES) . ' badge';
+    }
+    else {
+      $label = 'Requires a badge';
+    }
     $primary_html .= '<span class="tap-btn tap-btn--claimed">' . $label . '</span>';
   }
   elseif ($status === 'incomplete') {
@@ -526,18 +700,37 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
     $secondary_html .= '<a href="' . $log_url . '" class="tap-link">Log a different fix for this tool</a>';
   }
 
-  // Assemble the action panel.
-  $actions_html = '<div class="task-action-panel">';
-  if ($status_html) {
-    $actions_html .= '<div class="tap-status-row">' . $status_html . '</div>';
-  }
-  $actions_html .= '<div class="tap-primary-row">' . $primary_html . '</div>';
-  $actions_html .= '<div class="tap-secondary-row">' . $secondary_html . '</div>';
-  $actions_html .= '</div>';
-
+  // Assemble the action panel as a nested render array so the Flag module's
+  // "Mark as Done" button (a real render array) can sit inside the primary
+  // row alongside the Claim button instead of floating in a separate block.
   $build['task_status_actions'] = [
-    '#markup' => $actions_html,
+    '#type' => 'container',
+    '#attributes' => ['class' => ['task-action-panel']],
     '#weight' => -10,
+  ];
+  if ($status_html) {
+    $build['task_status_actions']['status'] = [
+      '#type' => 'container',
+      '#attributes' => ['class' => ['tap-status-row']],
+      'content' => ['#markup' => $status_html],
+    ];
+  }
+  $build['task_status_actions']['primary'] = [
+    '#type' => 'container',
+    '#attributes' => ['class' => ['tap-primary-row']],
+    'content' => ['#markup' => $primary_html],
+  ];
+  // Fold the flag button into the primary row. It's still rendered by the
+  // Flag module's build logic; we just move the subtree.
+  if (isset($build['flag_task_completed'])) {
+    $build['task_status_actions']['primary']['flag'] = $build['flag_task_completed'];
+    $build['task_status_actions']['primary']['flag']['#weight'] = 10;
+    unset($build['flag_task_completed']);
+  }
+  $build['task_status_actions']['secondary'] = [
+    '#type' => 'container',
+    '#attributes' => ['class' => ['tap-secondary-row']],
+    'content' => ['#markup' => $secondary_html],
   ];
 }
 
@@ -1186,6 +1379,12 @@ function makehaven_tasks_preprocess_views_view_table(&$variables) {
       $entry['est'] = $hours < 1 ? (int) ($hours * 60) . ' min' : number_format($hours, 1) . ' hr';
     }
 
+    // Thumbnail HTML — task image > equipment image > category emoji. The
+    // JS (task-priority.js) injects this as a new first <td> on each row.
+    // Table-style views don't fire hook_preprocess_views_view_fields, so we
+    // can't add pseudo Views fields here; drupalSettings + JS is the path.
+    $entry['image_html'] = _makehaven_tasks_card_image_html($node);
+
     $claim_data[$index] = $entry;
   }
 
@@ -1394,6 +1593,146 @@ View Task: {$node_url}";
 }
 
 // ── Recognition helpers ────────────────────────────────────────────────────
+
+/**
+ * Builds a compact "equipment card" for the task detail page.
+ *
+ * Shows the tool's image, name, and area-of-interest terms in a small flex
+ * card (wrapped in a link to the item node). Falls back to a 🔧 emoji on the
+ * thumbnail when the item has no image.
+ */
+function _makehaven_tasks_equipment_card_html(NodeInterface $item): string {
+  $item_url = $item->toUrl()->toString();
+  $name = htmlspecialchars($item->label(), ENT_QUOTES);
+
+  $thumb_html = '<span class="task-equipment-card__placeholder">🔧</span>';
+  if ($item->hasField('field_item_image') && !$item->get('field_item_image')->isEmpty()) {
+    $fid = (int) $item->get('field_item_image')->target_id;
+    $file = $fid ? \Drupal::entityTypeManager()->getStorage('file')->load($fid) : NULL;
+    if ($file) {
+      $uri = $file->getFileUri();
+      $style = \Drupal\image\Entity\ImageStyle::load('small_square');
+      $url = $style
+        ? $style->buildUrl($uri)
+        : \Drupal::service('file_url_generator')->generateAbsoluteString($uri);
+      $thumb_html = '<img src="' . htmlspecialchars($url, ENT_QUOTES)
+        . '" alt="" loading="lazy">';
+    }
+  }
+
+  $area_html = '';
+  if ($item->hasField('field_item_area_interest') && !$item->get('field_item_area_interest')->isEmpty()) {
+    $areas = [];
+    foreach ($item->get('field_item_area_interest')->referencedEntities() as $term) {
+      $areas[] = htmlspecialchars($term->label(), ENT_QUOTES);
+    }
+    if ($areas) {
+      $area_html = '<div class="task-equipment-card__area">' . implode(' · ', $areas) . '</div>';
+    }
+  }
+
+  return '<a href="' . $item_url . '" class="task-equipment-card">'
+    . '<div class="task-equipment-card__thumb">' . $thumb_html . '</div>'
+    . '<div class="task-equipment-card__meta">'
+    . '<div class="task-equipment-card__name">' . $name . '</div>'
+    . $area_html
+    . '</div>'
+    . '</a>';
+}
+
+/**
+ * Builds the card thumbnail HTML for a task row.
+ *
+ * Cascades through three sources so every card has something visual:
+ *   1. field_task_image on the task (member-uploaded photo of the problem)
+ *   2. field_item_image on the linked equipment (tool photo, very common)
+ *   3. Category emoji placeholder (cleaning/maintenance/inspection/…)
+ *
+ * Returned HTML is injected as a pseudo Views field; styling is driven by
+ * CSS via the .task-card-thumb / .task-card-thumb--placeholder classes so
+ * the placeholder tint matches the category.
+ */
+function _makehaven_tasks_card_image_html(NodeInterface $task): string {
+  $image_sources = [
+    ['entity' => $task, 'field' => 'field_task_image'],
+  ];
+  if ($task->hasField('field_task_equipment') && !$task->get('field_task_equipment')->isEmpty()) {
+    $item = $task->get('field_task_equipment')->entity;
+    if ($item instanceof NodeInterface) {
+      $image_sources[] = ['entity' => $item, 'field' => 'field_item_image'];
+    }
+  }
+
+  foreach ($image_sources as $source) {
+    /** @var \Drupal\Core\Entity\FieldableEntityInterface $entity */
+    $entity = $source['entity'];
+    $field = $source['field'];
+    if (!$entity->hasField($field) || $entity->get($field)->isEmpty()) {
+      continue;
+    }
+    $fid = (int) $entity->get($field)->target_id;
+    if (!$fid) {
+      continue;
+    }
+    /** @var \Drupal\file\FileInterface|null $file */
+    $file = \Drupal::entityTypeManager()->getStorage('file')->load($fid);
+    if (!$file) {
+      continue;
+    }
+    $uri = $file->getFileUri();
+    $style = \Drupal\image\Entity\ImageStyle::load('small_square');
+    $url = $style
+      ? $style->buildUrl($uri)
+      : \Drupal::service('file_url_generator')->generateAbsoluteString($uri);
+    return '<div class="task-card-thumb"><img src="'
+      . htmlspecialchars($url, ENT_QUOTES) . '" alt="" loading="lazy"></div>';
+  }
+
+  // Category placeholder. Unknown/empty categories fall back to a neutral
+  // note emoji and the "other" class so cards never render a blank strip.
+  $category = $task->hasField('field_task_category') && !$task->get('field_task_category')->isEmpty()
+    ? $task->get('field_task_category')->value
+    : 'other';
+  $emoji_map = [
+    'cleaning' => '🧹',
+    'maintenance' => '🔧',
+    'inspection' => '🔍',
+    'restocking' => '📦',
+    'other' => '📝',
+  ];
+  $emoji = $emoji_map[$category] ?? '📝';
+  $class = 'task-card-thumb task-card-thumb--placeholder task-card-thumb--cat-'
+    . preg_replace('/[^a-z0-9_-]/', '', $category);
+  return '<div class="' . $class . '"><span class="task-card-thumb__icon">'
+    . $emoji . '</span></div>';
+}
+
+/**
+ * Checks whether a user holds a given badge.
+ *
+ * Reads `field_member_badges` from the user's main profile. Matches the
+ * pattern used by appointment_facilitator and other badge-aware modules.
+ */
+function _makehaven_tasks_user_has_badge(int $uid, int $badge_tid): bool {
+  if ($uid <= 0 || $badge_tid <= 0) {
+    return FALSE;
+  }
+  if (!\Drupal::entityTypeManager()->hasDefinition('profile')) {
+    return FALSE;
+  }
+  $profiles = \Drupal::entityTypeManager()->getStorage('profile')
+    ->loadByProperties(['uid' => $uid, 'type' => 'main', 'status' => 1]);
+  $profile = reset($profiles);
+  if (!$profile || !$profile->hasField('field_member_badges') || $profile->get('field_member_badges')->isEmpty()) {
+    return FALSE;
+  }
+  foreach ($profile->get('field_member_badges') as $item) {
+    if ((int) $item->target_id === $badge_tid) {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
 
 /**
  * Returns the total number of tasks a user has completed (flagging count).

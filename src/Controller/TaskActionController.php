@@ -45,9 +45,20 @@ class TaskActionController extends ControllerBase {
     }
 
     if ($audience === 'badge_holders') {
-      // Badge-holder tasks require the facilitator role or staff.
+      // Staff and facilitators always pass. Regular members may claim when
+      // they hold the specific required badge. If no badge is set, fall back
+      // to the legacy facilitator-only rule.
       $allowed_roles = ['administrator', 'manager', 'content_editor', 'facilitator'];
-      if (!array_intersect($allowed_roles, $current_user->getRoles())) {
+      $passes = (bool) array_intersect($allowed_roles, $current_user->getRoles());
+      if (!$passes
+        && $node->hasField('field_task_required_badge')
+        && !$node->get('field_task_required_badge')->isEmpty()) {
+        $required_tid = (int) $node->get('field_task_required_badge')->target_id;
+        if ($required_tid && _makehaven_tasks_user_has_badge($uid, $required_tid)) {
+          $passes = TRUE;
+        }
+      }
+      if (!$passes) {
         $this->messenger()->addError($this->t('This task requires a badge. Please check with a facilitator.'));
         return new RedirectResponse(Url::fromRoute('entity.node.canonical', ['node' => $node->id()])->toString());
       }
