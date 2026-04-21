@@ -36,12 +36,12 @@
     var html = '';
     if (data.status === 'in_progress' && data.claimer) {
       html += '<div class="task-card-claim">'
-        + '<a href="' + data.claimer_url + '" class="task-face task-face--sm">'
+        + '<span class="task-face task-face--sm">'
         + '<span class="task-face__circle"><span class="task-face__initials">' + (data.initials || '') + '</span></span>'
         + '<span class="task-face__meta">'
         + '<span class="task-face__label">Claimed</span>'
         + '<span class="task-face__name">' + data.claimer + '</span>'
-        + '</span></a></div>';
+        + '</span></span></div>';
     } else if (data.status === 'incomplete') {
       html += '<div class="task-card-claim">'
         + '<span class="task-card-badge task-card-incomplete">⚠ Needs attention</span>'

@@ -1021,12 +1021,20 @@ function _makehaven_tasks_render_face(int $uid, string $label, string $size = 'm
   $label_html = htmlspecialchars($label, ENT_QUOTES);
   $size_class = 'task-face--' . ($size === 'sm' ? 'sm' : 'md');
 
-  return '<a href="' . $profile_url . '" class="task-face ' . $size_class . '" title="' . $label_html . ': ' . $name_html . '">'
-    . '<span class="task-face__circle">' . $img_html . '</span>'
+  $inner = '<span class="task-face__circle">' . $img_html . '</span>'
     . '<span class="task-face__meta">'
     . '<span class="task-face__label">' . $label_html . '</span>'
     . '<span class="task-face__name">' . $name_html . '</span>'
-    . '</span>'
+    . '</span>';
+
+  if ($size === 'sm') {
+    return '<span class="task-face ' . $size_class . '" title="' . $label_html . ': ' . $name_html . '">'
+      . $inner
+      . '</span>';
+  }
+
+  return '<a href="' . $profile_url . '" class="task-face ' . $size_class . '" title="' . $label_html . ': ' . $name_html . '">'
+    . $inner
     . '</a>';
 }
 
