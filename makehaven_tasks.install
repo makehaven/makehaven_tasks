@@ -6,6 +6,8 @@
  */
 
 use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\Core\Field\FieldStorageDefinitionInterface;
+use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 
 /**
@@ -443,4 +445,83 @@ function makehaven_tasks_update_9005() {
   }
 
   return t('Granted tiered task permissions to member, facilitator, and staff roles.');
+}
+
+/**
+ * Add field_task_helpers and field_task_allow_multiple.
+ *
+ * Single-claim is now the default: one member is the lead (field_task_claimed_by)
+ * and others can "offer to help" — tracked in field_task_helpers (multi-value
+ * user ref). Tasks that genuinely suit several independent claimants can opt in
+ * via field_task_allow_multiple, in which case every participant is treated as a
+ * co-claimant with no single lead.
+ */
+function makehaven_tasks_update_9006() {
+  $messages = [];
+
+  // 1. field_task_helpers — members who offered to help the lead (or, on
+  //    allow-multiple tasks, the co-claimants). Unlimited cardinality.
+  if (!FieldStorageConfig::loadByName('node', 'field_task_helpers')) {
+    FieldStorageConfig::create([
+      'field_name' => 'field_task_helpers',
+      'entity_type' => 'node',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'user'],
+      'cardinality' => FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED,
+    ])->save();
+  }
+  if (!FieldConfig::loadByName('node', 'task', 'field_task_helpers')) {
+    FieldConfig::create([
+      'field_name' => 'field_task_helpers',
+      'entity_type' => 'node',
+      'bundle' => 'task',
+      'label' => 'Helpers',
+      'required' => FALSE,
+      'description' => 'Members who offered to help the lead. Managed by the "Offer to help" button — not edited directly.',
+      'settings' => [
+        'handler' => 'default:user',
+        'handler_settings' => ['filter' => [], 'sort' => [], 'auto_create' => FALSE],
+      ],
+    ])->save();
+    $messages[] = 'field_task_helpers';
+  }
+
+  // 2. field_task_allow_multiple — per-task opt-in to multi-claim.
+  if (!FieldStorageConfig::loadByName('node', 'field_task_allow_multiple')) {
+    FieldStorageConfig::create([
+      'field_name' => 'field_task_allow_multiple',
+      'entity_type' => 'node',
+      'type' => 'boolean',
+      'cardinality' => 1,
+    ])->save();
+  }
+  if (!FieldConfig::loadByName('node', 'task', 'field_task_allow_multiple')) {
+    FieldConfig::create([
+      'field_name' => 'field_task_allow_multiple',
+      'entity_type' => 'node',
+      'bundle' => 'task',
+      'label' => 'Allow multiple people to claim',
+      'required' => FALSE,
+      'default_value' => [['value' => 0]],
+      'description' => 'Off (default): the first person becomes the lead and others can offer to help. On: several members can each claim independently — use for tasks like "everyone wipe down a bench".',
+      'settings' => ['on_label' => 'Yes', 'off_label' => 'No'],
+    ])->save();
+    $messages[] = 'field_task_allow_multiple';
+
+    // Surface the checkbox on the task form, just under "Who can claim".
+    $form_display = \Drupal::entityTypeManager()
+      ->getStorage('entity_form_display')
+      ->load('node.task.default');
+    if ($form_display) {
+      $form_display->setComponent('field_task_allow_multiple', [
+        'type' => 'boolean_checkbox',
+        'weight' => 6,
+        'region' => 'content',
+        'settings' => ['display_label' => TRUE],
+        'third_party_settings' => [],
+      ])->save();
+    }
+  }
+
+  return t('Added @fields.', ['@fields' => $messages ? implode(', ', $messages) : 'no new fields (already present)']);
 }

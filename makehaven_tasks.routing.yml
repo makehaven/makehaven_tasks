@@ -47,6 +47,15 @@ makehaven_tasks.claim:
     _user_is_logged_in: 'TRUE'
     node: '\d+'
 
+makehaven_tasks.help:
+  path: '/tasks/{node}/help'
+  defaults:
+    _controller: '\Drupal\makehaven_tasks\Controller\TaskActionController::help'
+    _title: 'Offer to help'
+  requirements:
+    _user_is_logged_in: 'TRUE'
+    node: '\d+'
+
 makehaven_tasks.handoff:
   path: '/tasks/{node}/handoff'
   defaults:

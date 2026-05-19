@@ -101,12 +101,13 @@ function makehaven_tasks_entity_form_display_alter(\Drupal\Core\Entity\Display\E
   // matches the underlying field storage. Weights are chosen so the fields
   // appear in a sensible order inside the "More details" collapse.
   $hidden_to_expose = [
-    'field_task_required_badge' => ['type' => 'options_select',   'weight' => 6, 'settings' => []],
-    'field_task_category'       => ['type' => 'options_buttons',  'weight' => 7, 'settings' => []],
-    'field_task_estimated_hours' => ['type' => 'number',          'weight' => 8, 'settings' => ['placeholder' => '']],
-    'field_task_instructions'   => ['type' => 'text_textarea',    'weight' => 9, 'settings' => ['rows' => 5, 'placeholder' => '']],
-    'field_task_video_url'      => ['type' => 'link_default',     'weight' => 10, 'settings' => ['placeholder_url' => '', 'placeholder_title' => '']],
-    'field_task_group'          => ['type' => 'options_select',   'weight' => 11, 'settings' => []],
+    'field_task_allow_multiple'  => ['type' => 'boolean_checkbox', 'weight' => 6, 'settings' => ['display_label' => TRUE]],
+    'field_task_required_badge' => ['type' => 'options_select',   'weight' => 7, 'settings' => []],
+    'field_task_category'       => ['type' => 'options_buttons',  'weight' => 8, 'settings' => []],
+    'field_task_estimated_hours' => ['type' => 'number',          'weight' => 9, 'settings' => ['placeholder' => '']],
+    'field_task_instructions'   => ['type' => 'text_textarea',    'weight' => 10, 'settings' => ['rows' => 5, 'placeholder' => '']],
+    'field_task_video_url'      => ['type' => 'link_default',     'weight' => 11, 'settings' => ['placeholder_url' => '', 'placeholder_title' => '']],
+    'field_task_group'          => ['type' => 'options_select',   'weight' => 12, 'settings' => []],
   ];
   foreach ($hidden_to_expose as $name => $options) {
     $form_display->setComponent($name, $options + [
@@ -253,7 +254,7 @@ function makehaven_tasks_form_node_form_alter(array &$form, \Drupal\Core\Form\Fo
   }
 
   // ── 4. Hide fields that shouldn't be set at create/edit time ──────────
-  foreach (['field_task_status', 'field_task_claimed_by', 'comment_node_task'] as $field) {
+  foreach (['field_task_status', 'field_task_claimed_by', 'field_task_helpers', 'comment_node_task'] as $field) {
     if (isset($form[$field])) {
       $form[$field]['#access'] = FALSE;
     }
@@ -524,7 +525,7 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
 
   // Suppress raw field label/value pairs the action panel shows better.
   // Use unset() instead of #access=FALSE — Gin theme can ignore #access.
-  foreach (['field_task_status', 'field_task_claimed_by'] as $field) {
+  foreach (['field_task_status', 'field_task_claimed_by', 'field_task_helpers', 'field_task_allow_multiple'] as $field) {
     unset($build[$field]);
   }
 
@@ -613,9 +614,28 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
     'query' => ['token' => $token],
   ])->toString();
   $handoff_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.handoff', ['node' => $nid])->toString();
+  $help_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.help', ['node' => $nid], [
+    'query' => ['token' => $token],
+  ])->toString();
 
-  $claimed_by = $node->get('field_task_claimed_by')->target_id;
-  $is_claimed_by_me = $claimed_by && $claimed_by == $current_uid;
+  $claimed_by = (int) ($node->get('field_task_claimed_by')->target_id ?? 0);
+  $allow_multiple = $node->hasField('field_task_allow_multiple')
+    && (bool) $node->get('field_task_allow_multiple')->value;
+
+  // Helper / co-claimant uids.
+  $helper_uids = [];
+  if ($node->hasField('field_task_helpers') && !$node->get('field_task_helpers')->isEmpty()) {
+    foreach ($node->get('field_task_helpers') as $item) {
+      if ($item->target_id) {
+        $helper_uids[] = (int) $item->target_id;
+      }
+    }
+    $helper_uids = array_values(array_unique($helper_uids));
+  }
+
+  $is_lead = $claimed_by && $claimed_by == $current_uid;
+  $is_helper = in_array((int) $current_uid, $helper_uids, TRUE);
+  $on_task = $is_lead || $is_helper;
 
   // Check whether the current user is allowed to claim based on audience.
   $audience = $node->hasField('field_task_audience') ? $node->get('field_task_audience')->value : NULL;
@@ -655,8 +675,20 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
   }
   elseif ($status === 'in_progress') {
     $status_html .= '<span class="tap-badge tap-badge--inprogress">🔧 In progress</span>';
-    if ($claimed_by) {
-      $status_html .= _makehaven_tasks_render_face((int) $claimed_by, (string) t('Claimed by'), 'md');
+    if ($allow_multiple) {
+      // No single lead — everyone is an equal "on it" participant.
+      $on_it = $claimed_by ? array_merge([$claimed_by], $helper_uids) : $helper_uids;
+      foreach (array_values(array_unique($on_it)) as $i => $puid) {
+        $status_html .= _makehaven_tasks_render_face((int) $puid, $i === 0 ? (string) t('On it') : '', 'md');
+      }
+    }
+    else {
+      if ($claimed_by) {
+        $status_html .= _makehaven_tasks_render_face((int) $claimed_by, (string) t('Lead'), 'md');
+      }
+      foreach ($helper_uids as $i => $huid) {
+        $status_html .= _makehaven_tasks_render_face((int) $huid, $i === 0 ? (string) t('Helping') : '', 'md');
+      }
     }
   }
 
@@ -675,13 +707,29 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
     $primary_html .= '<span class="tap-btn tap-btn--claimed">' . $label . '</span>';
   }
   elseif ($status === 'incomplete') {
+    // Stalled hand-off — anyone eligible can pick it up and become the lead.
     $primary_html .= '<a href="' . $claim_url . '" class="tap-btn tap-btn--claim">✋ Pick this up</a>';
   }
-  elseif (!$is_claimed_by_me) {
+  elseif (!$claimed_by) {
+    // Open / unclaimed.
+    $primary_html .= '<a href="' . $claim_url . '" class="tap-btn tap-btn--claim">✋ Claim task</a>';
+  }
+  elseif ($is_lead) {
+    $primary_html .= '<span class="tap-btn tap-btn--claimed">✓ You\'ve claimed this</span>';
+  }
+  elseif ($is_helper) {
+    $primary_html .= $allow_multiple
+      ? '<span class="tap-btn tap-btn--claimed">✓ You\'re on it</span>'
+      : '<span class="tap-btn tap-btn--claimed">✓ You\'re helping</span>';
+  }
+  elseif ($allow_multiple) {
+    // Multi-claim task someone else already started — join as a co-claimant.
     $primary_html .= '<a href="' . $claim_url . '" class="tap-btn tap-btn--claim">✋ Claim task</a>';
   }
   else {
-    $primary_html .= '<span class="tap-btn tap-btn--claimed">✓ You\'ve claimed this</span>';
+    // Single-claim task already held by someone else — offer help instead of
+    // a misleading second "Claim" button.
+    $primary_html .= '<a href="' . $help_url . '" class="tap-btn tap-btn--help">🙋 Offer to help</a>';
   }
 
   // Secondary actions.
@@ -689,8 +737,13 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
   if ($status === 'incomplete') {
     $secondary_html .= '<a href="' . $handoff_url . '" class="tap-link">Update handoff note</a>';
   }
-  else {
+  elseif ($on_task || $is_staff) {
+    // Only the people actually on the task (or staff) can hand it off.
     $secondary_html .= '<a href="' . $handoff_url . '" class="tap-link tap-link--danger">I couldn\'t finish — hand off</a>';
+  }
+  // Single-claim helpers can quietly step back.
+  if ($is_helper && !$allow_multiple && $status !== 'incomplete') {
+    $secondary_html .= '<a href="' . $help_url . '" class="tap-link">Step back from helping</a>';
   }
   if ($node->hasField('field_task_equipment') && !$node->get('field_task_equipment')->isEmpty()) {
     $item_nid = $node->get('field_task_equipment')->target_id;
@@ -959,6 +1012,67 @@ function _makehaven_tasks_notify_handoff($node, $note, $from_uid, $reassign_uid)
     }
     catch (\Exception $e) {
       \Drupal::logger('makehaven_tasks')->error('Error posting handoff Slack notification: @error', ['@error' => $e->getMessage()]);
+    }
+  }
+}
+
+/**
+ * Notifies the task lead on Slack that someone offered to help.
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The task node.
+ * @param int $helper_uid
+ *   The member who offered to help.
+ * @param int $lead_uid
+ *   The current lead/claimer.
+ */
+function _makehaven_tasks_notify_help_offer($node, $helper_uid, $lead_uid) {
+  $connector_config = \Drupal::config('slack_connector.settings');
+  $webhook_url = $connector_config->get('webhook_url');
+  if (empty($webhook_url)) {
+    return;
+  }
+
+  $helper = \Drupal\user\Entity\User::load($helper_uid);
+  $lead = \Drupal\user\Entity\User::load($lead_uid);
+  if (!$helper || !$lead) {
+    return;
+  }
+
+  $helper_slack = _makehaven_tasks_get_slack_id($helper);
+  $helper_mention = $helper_slack ? "<@{$helper_slack}>" : $helper->getDisplayName();
+  $lead_slack = _makehaven_tasks_get_slack_id($lead);
+  $lead_mention = $lead_slack ? "<@{$lead_slack}>" : $lead->getDisplayName();
+
+  $title = $node->label();
+  $node_url = \Drupal\Core\Url::fromRoute('entity.node.canonical', ['node' => $node->id()], ['absolute' => TRUE])->toString();
+  $message = "🙋 {$helper_mention} offered to help {$lead_mention} with *{$title}*\n{$node_url}";
+
+  $channels = ['#tasks'];
+  if ($node->hasField('field_task_equipment') && !$node->get('field_task_equipment')->isEmpty()) {
+    $item_node = $node->get('field_task_equipment')->entity;
+    if ($item_node && $item_node->hasField('field_item_slack_channel')
+      && !$item_node->get('field_item_slack_channel')->isEmpty()) {
+      $channels[] = '#' . ltrim($item_node->get('field_item_slack_channel')->value, '#');
+    }
+  }
+
+  $client = \Drupal::httpClient();
+  foreach (array_unique($channels) as $channel) {
+    try {
+      $client->post($webhook_url, [
+        'headers' => ['Content-Type' => 'application/json'],
+        'json' => [
+          'channel' => $channel,
+          'blocks' => [[
+            'type' => 'section',
+            'text' => ['type' => 'mrkdwn', 'text' => $message],
+          ]],
+        ],
+      ]);
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('makehaven_tasks')->error('Error posting help-offer Slack notification: @error', ['@error' => $e->getMessage()]);
     }
   }
 }
@@ -1422,15 +1536,30 @@ function makehaven_tasks_preprocess_views_view_fields(&$variables) {
   }
 
   $status = $node->hasField('field_task_status') ? $node->get('field_task_status')->value : 'open';
-  $claimed_uid = $node->hasField('field_task_claimed_by') && !$node->get('field_task_claimed_by')->isEmpty()
+  $claimed_uid = (int) (($node->hasField('field_task_claimed_by') && !$node->get('field_task_claimed_by')->isEmpty())
     ? $node->get('field_task_claimed_by')->target_id
-    : NULL;
+    : 0);
+  $allow_multiple = $node->hasField('field_task_allow_multiple')
+    && (bool) $node->get('field_task_allow_multiple')->value;
+  $helper_uids = [];
+  if ($node->hasField('field_task_helpers') && !$node->get('field_task_helpers')->isEmpty()) {
+    foreach ($node->get('field_task_helpers') as $item) {
+      if ($item->target_id) {
+        $helper_uids[] = (int) $item->target_id;
+      }
+    }
+    $helper_uids = array_values(array_unique($helper_uids));
+  }
 
   $badges = '';
 
   // Status / claimed-by badge.
   if ($status === 'in_progress' && $claimed_uid) {
-    $badges .= _makehaven_tasks_render_face((int) $claimed_uid, (string) t('Claimed'), 'sm');
+    $badges .= _makehaven_tasks_render_face((int) $claimed_uid, $allow_multiple ? (string) t('On it') : (string) t('Lead'), 'sm');
+    if ($helper_uids) {
+      $badges .= '<span class="task-card-badge task-card-inprogress">+' . count($helper_uids)
+        . ($allow_multiple ? ' on it' : ' helping') . '</span>';
+    }
   }
   elseif ($status === 'incomplete') {
     $badges .= '<span class="task-card-badge task-card-incomplete">⚠ Needs attention</span>';
@@ -1461,10 +1590,14 @@ function makehaven_tasks_preprocess_views_view_fields(&$variables) {
     $already_done = $flag && $flag_service->getFlagging($flag, $node);
 
     if (!$already_done) {
-      $current_uid = $account->id();
-      $is_claimed_by_me = $claimed_uid && $claimed_uid == $current_uid;
+      $current_uid = (int) $account->id();
+      $is_lead = $claimed_uid && $claimed_uid === $current_uid;
+      $is_helper = in_array($current_uid, $helper_uids, TRUE);
       $token = \Drupal::csrfToken()->get("task-action/{$nid}");
       $claim_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.claim', ['node' => $nid], [
+        'query' => ['token' => $token],
+      ])->toString();
+      $help_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.help', ['node' => $nid], [
         'query' => ['token' => $token],
       ])->toString();
       $node_url = \Drupal\Core\Url::fromRoute('entity.node.canonical', ['node' => $nid])->toString();
@@ -1473,10 +1606,16 @@ function makehaven_tasks_preprocess_views_view_fields(&$variables) {
 
       if ($status === 'incomplete') {
         $actions_html .= '<a href="' . $claim_url . '" class="task-action-btn">Pick this up</a>';
-      } elseif (!$is_claimed_by_me) {
+      } elseif (!$claimed_uid) {
+        $actions_html .= '<a href="' . $claim_url . '" class="task-action-btn">Claim task</a>';
+      } elseif ($is_lead) {
+        $actions_html .= '<span class="task-card-badge task-card-inprogress">✓ Claimed by you</span>';
+      } elseif ($is_helper) {
+        $actions_html .= '<span class="task-card-badge task-card-inprogress">' . ($allow_multiple ? '✓ You\'re on it' : '✓ You\'re helping') . '</span>';
+      } elseif ($allow_multiple) {
         $actions_html .= '<a href="' . $claim_url . '" class="task-action-btn">Claim task</a>';
       } else {
-        $actions_html .= '<span class="task-card-badge task-card-inprogress">✓ Claimed by you</span>';
+        $actions_html .= '<a href="' . $help_url . '" class="task-action-btn task-action-btn--help">🙋 Offer to help</a>';
       }
 
       $actions_html .= ' <a href="' . $node_url . '" class="task-card-details-link">Details →</a>';

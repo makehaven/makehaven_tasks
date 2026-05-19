@@ -89,6 +89,20 @@
   color: #fff !important;
 }
 
+/* "Offer to help" — secondary call to action, visually distinct from Claim
+   so it's clear this task is already led by someone else. */
+.tap-btn--help {
+  background: #fff;
+  color: #0d6efd !important;
+  border: 2px solid #0d6efd;
+  padding: calc(0.75rem - 2px) calc(1.75rem - 2px);
+}
+
+.tap-btn--help:hover {
+  background: #eaf1ff;
+  color: #0b5ed7 !important;
+}
+
 /* "You've claimed this" — muted state (not a link) */
 .tap-btn--claimed {
   display: inline-block;
@@ -310,6 +324,18 @@
 .task-action-btn:hover {
   background: #0b5ed7;
   color: #fff !important;
+}
+
+.task-action-btn--help {
+  background: #fff;
+  color: #0d6efd !important;
+  border: 1px solid #0d6efd;
+  padding: calc(0.45rem - 1px) calc(1rem - 1px);
+}
+
+.task-action-btn--help:hover {
+  background: #eaf1ff;
+  color: #0b5ed7 !important;
 }
 
 .task-card-details-link {
