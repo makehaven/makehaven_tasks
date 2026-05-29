@@ -150,11 +150,11 @@ class TasksDisplayController extends ControllerBase {
 
       .view-display-id-page_tasks_display .task-title {
         font-family: 'Roboto Condensed', 'Montserrat', sans-serif;
-        font-size: 1.85rem;
+        font-size: 2.75rem;
         font-weight: 800;
         color: #fff;
-        line-height: 1.15;
-        margin: 0 0 8px;
+        line-height: 1.1;
+        margin: 0 0 10px;
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
