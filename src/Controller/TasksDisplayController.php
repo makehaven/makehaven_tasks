@@ -318,7 +318,8 @@ CSS;
 
     var PRIO_LABEL = { 1: 'Urgent', 2: 'Medium', 3: 'Low', 4: 'Someday' };
     var ROTATE_MS = 20000;
-    var REFRESH_MS = 60000;
+    // 5 min: tasks change rarely; 60s polling was needless Pantheon traffic.
+    var REFRESH_MS = 300000;
 
     var pages = [];
     var pageIndex = 0;
