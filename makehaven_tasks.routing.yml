@@ -38,6 +38,14 @@ makehaven_tasks.retroactive_log:
   requirements:
     _user_is_logged_in: 'TRUE'
 
+makehaven_tasks.request:
+  path: '/tasks/request'
+  defaults:
+    _form: '\Drupal\makehaven_tasks\Form\TaskRequestForm'
+    _title: 'Request a volunteer maintenance task'
+  requirements:
+    _user_is_logged_in: 'TRUE'
+
 makehaven_tasks.claim:
   path: '/tasks/{node}/claim'
   defaults:

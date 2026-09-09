@@ -217,6 +217,31 @@ class TaskOccurrenceKernelTest extends KernelTestBase {
       'Cron must not create a new occurrence when an incomplete one exists.');
   }
 
+  /**
+   * Cron does not generate a duplicate while an open occurrence exists.
+   */
+  public function testCronSkipsOpenActiveSeries(): void {
+    $source = $this->createSeriesSource('weekly', '-1 day');
+    $this->createOccurrence($source->id(), 'open');
+
+    makehaven_tasks_cron();
+
+    $this->assertCount(1, $this->findOccurrences($source->id()));
+  }
+
+  /**
+   * A completed occurrence does not prevent the next scheduled occurrence.
+   */
+  public function testCronAllowsCompletedOccurrence(): void {
+    $source = $this->createSeriesSource('weekly', '-1 day');
+    $existing = $this->createOccurrence($source->id(), 'in_progress');
+    \Drupal::service('flag')->flag(Flag::load('task_completed'), $existing, $this->testUser);
+
+    makehaven_tasks_cron();
+
+    $this->assertCount(2, $this->findOccurrences($source->id()));
+  }
+
   // ---------------------------------------------------------------------------
   // Status default test
   // ---------------------------------------------------------------------------
@@ -349,6 +374,23 @@ class TaskOccurrenceKernelTest extends KernelTestBase {
       ->condition('field_task_series_source', $source_nid)
       ->accessCheck(FALSE)
       ->execute();
+  }
+
+  /**
+   * Creates a published occurrence for a recurring source.
+   */
+  protected function createOccurrence(int $source_nid, string $status): Node {
+    $node = Node::create([
+      'type' => 'task',
+      'title' => 'Existing occurrence',
+      'status' => 1,
+      'uid' => $this->testUser->id(),
+      'field_task_series_source' => ['target_id' => $source_nid],
+      'field_task_status' => $status,
+      'field_task_frequency' => 'weekly',
+    ]);
+    $node->save();
+    return $node;
   }
 
   /**

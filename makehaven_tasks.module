@@ -854,19 +854,28 @@ function makehaven_tasks_cron() {
       continue;
     }
 
-    // Skip if there's already an active incomplete occurrence — it must be
-    // resolved (flagged complete) before a new occurrence is created.
-    $active_incomplete = \Drupal::entityQuery('node')
+    // Skip if any published occurrence is still uncompleted. Workflow status
+    // describes how work is progressing; the completion flag is authoritative.
+    $occurrence_nids = \Drupal::entityQuery('node')
       ->condition('type', 'task')
       ->condition('status', NodeInterface::PUBLISHED)
       ->condition('field_task_series_source', $source_nid)
-      ->condition('field_task_status', 'incomplete')
       ->accessCheck(FALSE)
-      ->count()
       ->execute();
-    if ($active_incomplete > 0) {
+    $has_uncompleted_occurrence = FALSE;
+    if ($occurrence_nids) {
+      $flag_service = \Drupal::service('flag');
+      $completed_flag = $flag_service->getFlagById('task_completed');
+      foreach (Node::loadMultiple($occurrence_nids) as $occurrence) {
+        if (!$completed_flag || !$flag_service->getEntityFlaggings($completed_flag, $occurrence)) {
+          $has_uncompleted_occurrence = TRUE;
+          break;
+        }
+      }
+    }
+    if ($has_uncompleted_occurrence) {
       \Drupal::logger('makehaven_tasks')->notice(
-        'Skipping occurrence generation for series @nid — active incomplete occurrence exists.',
+        'Skipping occurrence generation for series @nid — an uncompleted occurrence exists.',
         ['@nid' => $source_nid]
       );
       continue;
