@@ -1,0 +1,21 @@
+services:
+  makehaven_tasks.volunteer_signups:
+    class: Drupal\makehaven_tasks\Volunteer\SignupStore
+    arguments: ['@database', '@entity_type.manager', '@datetime.time']
+
+  makehaven_tasks.volunteer_notifier:
+    class: Drupal\makehaven_tasks\Volunteer\Notifier
+    arguments: ['@config.factory', '@http_client', '@logger.factory', '@plugin.manager.mail', '@entity_type.manager', '@makehaven_tasks.volunteer_signups', '@language_manager']
+
+  makehaven_tasks.volunteer_decider:
+    class: Drupal\makehaven_tasks\Volunteer\Decider
+    arguments: ['@entity_type.manager', '@makehaven_tasks.volunteer_signups', '@makehaven_tasks.volunteer_notifier', '@config.factory', '@keyvalue', '@datetime.time', '@logger.factory', '@database']
+
+  makehaven_tasks.volunteer_board:
+    class: Drupal\makehaven_tasks\Volunteer\BoardBuilder
+    arguments: ['@entity_type.manager', '@makehaven_tasks.volunteer_signups', '@datetime.time']
+
+  makehaven_tasks.volunteer_route_subscriber:
+    class: Drupal\makehaven_tasks\Routing\VolunteerRouteSubscriber
+    tags:
+      - { name: event_subscriber }

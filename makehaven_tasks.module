@@ -1,7 +1,11 @@
 <?php
 
+use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Url;
+use Drupal\makehaven_tasks\Volunteer\BoardBuilder;
+use Drupal\makehaven_tasks\Volunteer\Opportunity;
 use Drupal\node\Entity\Node;
 use Drupal\node\NodeInterface;
 use Drupal\views\ViewExecutable;
@@ -109,6 +113,18 @@ function makehaven_tasks_entity_form_display_alter(\Drupal\Core\Entity\Display\E
     'field_task_video_url'      => ['type' => 'link_default',     'weight' => 11, 'settings' => ['placeholder_url' => '', 'placeholder_title' => '']],
     'field_task_group'          => ['type' => 'options_select',   'weight' => 12, 'settings' => []],
   ];
+  // Volunteer board fields, grouped into a details element in form_alter.
+  if (Opportunity::fieldsInstalled()) {
+    $hidden_to_expose += [
+      'field_task_type'           => ['type' => 'options_buttons',   'weight' => 30, 'settings' => []],
+      'field_task_stage'          => ['type' => 'options_select',    'weight' => 31, 'settings' => []],
+      'field_task_when'           => ['type' => 'daterange_default', 'weight' => 32, 'settings' => []],
+      'field_task_min_volunteers' => ['type' => 'number',            'weight' => 33, 'settings' => ['placeholder' => '']],
+      'field_task_max_volunteers' => ['type' => 'number',            'weight' => 34, 'settings' => ['placeholder' => '']],
+      'field_task_decide_by'      => ['type' => 'datetime_default',  'weight' => 35, 'settings' => []],
+      'field_task_interest'       => ['type' => 'options_select',    'weight' => 36, 'settings' => []],
+    ];
+  }
   foreach ($hidden_to_expose as $name => $options) {
     $form_display->setComponent($name, $options + [
       'region' => 'content',
@@ -291,6 +307,40 @@ function makehaven_tasks_form_node_form_alter(array &$form, \Drupal\Core\Form\Fo
     }
   }
 
+  // ── 8. Volunteer opportunity fields ─────────────────────────────────────
+  if (Opportunity::fieldsInstalled() && isset($form['field_task_stage'])) {
+    $open = !$node->get('field_task_stage')->isEmpty() || Opportunity::isShift($node);
+    $form['volunteer_opportunity'] = [
+      '#type' => 'details',
+      '#title' => t('Volunteer opportunity: kind, date, headcount, approval'),
+      '#description' => t('Leave Stage empty to post it straight to the board, as tasks always have been. Choose "Gathering interest" to list it with an "I\'m interested" button: staff approve it once enough people are in, and anything still short on its decide-by date (8 days by default) is declined quietly, with an email to its volunteers only.'),
+      '#open' => $open,
+      '#weight' => 15,
+    ];
+    foreach (['field_task_type', 'field_task_stage', 'field_task_when', 'field_task_min_volunteers',
+      'field_task_max_volunteers', 'field_task_decide_by', 'field_task_interest'] as $field) {
+      if (isset($form[$field])) {
+        $form[$field]['#group'] = 'volunteer_opportunity';
+      }
+    }
+    // Facilitators post directly or gather interest; only staff (who approve
+    // and decline) may set any stage by hand.
+    if (!$account->hasPermission('makehaven_tasks.manage_tasks') && isset($form['field_task_stage']['widget']['#options'])) {
+      $current = (string) $node->get('field_task_stage')->value;
+      $form['field_task_stage']['widget']['#options'] = array_filter(
+        $form['field_task_stage']['widget']['#options'],
+        fn($key) => in_array((string) $key, ['_none', Opportunity::STAGE_APPROVED, Opportunity::STAGE_GATHERING, $current], TRUE),
+        ARRAY_FILTER_USE_KEY
+      );
+    }
+    if (isset($form['field_task_when'])) {
+      $form['field_task_when']['#states'] = [
+        'visible' => [':input[name="field_task_type"]' => ['value' => Opportunity::TYPE_SHIFT]],
+      ];
+    }
+    $form['#validate'][] = '_makehaven_tasks_task_form_validate';
+  }
+
   // ── 5. Remove standard Drupal node-form noise ─────────────────────────────
   // Some of these elements (url_redirects, simple_sitemap) are injected by
   // other modules AFTER this form_alter runs, so isset() is unreliable. We use
@@ -298,6 +348,33 @@ function makehaven_tasks_form_node_form_alter(array &$form, \Drupal\Core\Form\Fo
   $form['#after_build'][] = '_makehaven_tasks_hide_form_noise';
   if (isset($form['revision_information'])) {
     $form['revision_information']['#access'] = FALSE;
+  }
+}
+
+/**
+ * Validates the volunteer fields on the task form.
+ */
+function _makehaven_tasks_task_form_validate(array &$form, \Drupal\Core\Form\FormStateInterface $form_state): void {
+  $type = $form_state->getValue(['field_task_type', 0, 'value']);
+  $when = $form_state->getValue(['field_task_when', 0, 'value']);
+  if ($type === Opportunity::TYPE_SHIFT && empty($when)) {
+    $form_state->setErrorByName('field_task_when', t('A dated shift needs a start date and time.'));
+  }
+  $stage = $form_state->getValue(['field_task_stage', 0, 'value']);
+  $original_stage = '';
+  if (($form_object = $form_state->getFormObject()) && method_exists($form_object, 'getEntity')) {
+    $original_stage = (string) $form_object->getEntity()->get('field_task_stage')->value;
+  }
+  // Only when it starts gathering here: an opportunity already gathering
+  // keeps the decide-by it was given.
+  if ($type === Opportunity::TYPE_SHIFT && $stage === Opportunity::STAGE_GATHERING && $original_stage !== Opportunity::STAGE_GATHERING
+    && $when instanceof \Drupal\Core\Datetime\DrupalDateTime && $when->getTimestamp() < \Drupal::time()->getCurrentTime() + Opportunity::MIN_LEAD) {
+    $form_state->setErrorByName('field_task_when', t('A shift gathering interest must start at least two days from now, so people can sign up and staff can approve it. Post it as approved instead if the crew is already known.'));
+  }
+  $min = $form_state->getValue(['field_task_min_volunteers', 0, 'value']);
+  $max = $form_state->getValue(['field_task_max_volunteers', 0, 'value']);
+  if ($min !== NULL && $min !== '' && $max !== NULL && $max !== '' && (int) $max < (int) $min) {
+    $form_state->setErrorByName('field_task_max_volunteers', t('"Most volunteers" cannot be fewer than "Volunteers needed".'));
   }
 }
 
@@ -355,6 +432,51 @@ function makehaven_tasks_node_insert(NodeInterface $node) {
   if ($node->bundle() === 'task' && $node->isPublished()) {
     _makehaven_tasks_notify_lead_due($node);
   }
+  if ($node->bundle() === 'task') {
+    \Drupal::service('makehaven_tasks.volunteer_decider')->afterSave($node, NULL);
+  }
+}
+
+/**
+ * Implements hook_node_update().
+ *
+ * Volunteer board: records claim times (for stale-claim nudges) and posts the
+ * #volunteers recruitment call when an opportunity starts gathering interest.
+ */
+function makehaven_tasks_node_update(NodeInterface $node) {
+  if ($node->bundle() !== 'task') {
+    return;
+  }
+  $original = method_exists($node, 'getOriginal') ? $node->getOriginal() : ($node->original ?? NULL);
+  \Drupal::service('makehaven_tasks.volunteer_decider')->afterSave($node, $original instanceof NodeInterface ? $original : NULL);
+}
+
+/**
+ * Implements hook_node_delete().
+ */
+function makehaven_tasks_node_delete(NodeInterface $node) {
+  if ($node->bundle() === 'task' && \Drupal::database()->schema()->tableExists('makehaven_task_signup')) {
+    \Drupal::service('makehaven_tasks.volunteer_signups')->clear((int) $node->id());
+  }
+}
+
+/**
+ * Implements hook_node_access().
+ *
+ * A proposed draft (unpublished, not on the board) is visible to its author
+ * and to facilitators/staff (makehaven_tasks.create_task), who release it.
+ */
+function makehaven_tasks_node_access(NodeInterface $node, $op, AccountInterface $account) {
+  if ($op !== 'view' || $node->bundle() !== 'task' || !Opportunity::fieldsInstalled()
+    || Opportunity::stage($node) !== Opportunity::STAGE_PROPOSED) {
+    return AccessResult::neutral();
+  }
+  $allowed = ($account->isAuthenticated() && (int) $node->getOwnerId() === (int) $account->id())
+    || $account->hasPermission('makehaven_tasks.create_task');
+  return AccessResult::allowedIf($allowed)
+    ->cachePerPermissions()
+    ->cachePerUser()
+    ->addCacheableDependency($node);
 }
 
 /**
@@ -394,9 +516,65 @@ function makehaven_tasks_views_query_alter(ViewExecutable $view, $query) {
     );
   }
 
+  // Volunteer board: the task list is "Ongoing tasks". Opportunities still
+  // gathering interest, drafts, declined ones and dated shifts render in
+  // their own board sections above it (see BoardBuilder), and the signage
+  // display adds gathering ones itself. Empty stage = approved.
+  if (in_array($view->current_display, ['page_tasks_interactive', 'page_tasks_display'], TRUE) && Opportunity::fieldsInstalled()) {
+    $query->addWhereExpression(0, "node_field_data.nid NOT IN (SELECT mh_st.entity_id FROM {node__field_task_stage} mh_st WHERE mh_st.deleted = 0 AND mh_st.field_task_stage_value <> 'approved')");
+    $query->addWhereExpression(0, "node_field_data.nid NOT IN (SELECT mh_ty.entity_id FROM {node__field_task_type} mh_ty WHERE mh_ty.deleted = 0 AND mh_ty.field_task_type_value = 'shift')");
+  }
+  if ($view->current_display === 'page_tasks_interactive' && Opportunity::fieldsInstalled()) {
+    _makehaven_tasks_apply_board_filters($query, BoardBuilder::filters(\Drupal::request()));
+  }
+
   // Note: "no priority goes last" is applied via hook_query_TAG_alter on the
   // views_tasks query tag below, because Views' SQL orderby can't take raw
   // SQL expressions without escaping them as column names.
+}
+
+/**
+ * Applies the board's skill / interest filters to the task list query.
+ */
+function _makehaven_tasks_apply_board_filters($query, array $filters): void {
+  if ($filters['skill'] === 'open') {
+    $query->addWhereExpression(0, "node_field_data.nid NOT IN (SELECT mh_au.entity_id FROM {node__field_task_audience} mh_au WHERE mh_au.deleted = 0 AND mh_au.field_task_audience_value IN ('badge_holders', 'staff_only'))");
+  }
+  elseif ($filters['skill'] === 'badge') {
+    $query->addWhereExpression(0, "node_field_data.nid IN (SELECT mh_au.entity_id FROM {node__field_task_audience} mh_au WHERE mh_au.deleted = 0 AND mh_au.field_task_audience_value = 'badge_holders')");
+  }
+  $area_table = \Drupal::database()->schema()->tableExists('node__field_item_area_interest');
+  $tool_area = $area_table
+    ? "SELECT mh_eq.entity_id FROM {node__field_task_equipment} mh_eq INNER JOIN {node__field_item_area_interest} mh_ar ON mh_ar.entity_id = mh_eq.field_task_equipment_target_id AND mh_ar.deleted = 0 WHERE mh_eq.deleted = 0"
+    : NULL;
+  if ($filters['area'] === 'general') {
+    $query->addWhereExpression(0, "node_field_data.nid NOT IN (SELECT mh_in.entity_id FROM {node__field_task_interest} mh_in WHERE mh_in.deleted = 0)");
+    if ($tool_area) {
+      $query->addWhereExpression(0, "node_field_data.nid NOT IN ($tool_area)");
+    }
+  }
+  elseif ($filters['area'] !== '') {
+    $tid = (int) $filters['area'];
+    $expr = "(node_field_data.nid IN (SELECT mh_in.entity_id FROM {node__field_task_interest} mh_in WHERE mh_in.deleted = 0 AND mh_in.field_task_interest_target_id = :mh_vol_area1)";
+    $args = [':mh_vol_area1' => $tid];
+    if ($tool_area) {
+      $expr .= " OR node_field_data.nid IN ($tool_area AND mh_ar.field_item_area_interest_target_id = :mh_vol_area2)";
+      $args[':mh_vol_area2'] = $tid;
+    }
+    $query->addWhereExpression(0, $expr . ')', $args);
+  }
+}
+
+/**
+ * Implements hook_views_pre_render().
+ *
+ * The board is "Volunteer" now (JR 2026-09-28): one place for things people
+ * can do in the space. /tasks and /volunteer render the same display.
+ */
+function makehaven_tasks_views_pre_render(ViewExecutable $view) {
+  if ($view->id() === 'tasks' && $view->current_display === 'page_tasks_interactive') {
+    $view->setTitle((string) t('Volunteer'));
+  }
 }
 
 /**
@@ -452,6 +630,8 @@ function makehaven_tasks_node_presave(NodeInterface $node) {
       $node->set('field_task_category', $guess);
     }
   }
+  // Volunteer board: default decide-by (created + 8 days) while gathering.
+  \Drupal::service('makehaven_tasks.volunteer_decider')->presave($node);
 }
 
 /**
@@ -598,6 +778,25 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
       '#weight' => -10,
     ];
     return;
+  }
+
+  // ── 2b. Volunteer board stages — anything not an approved plain task gets
+  // the opportunity panel (interest, roster, decision) instead of Claim.
+  if (Opportunity::fieldsInstalled()
+    && (!Opportunity::isApproved($node) || Opportunity::isShift($node))) {
+    foreach (['field_task_stage', 'field_task_type', 'field_task_when', 'field_task_min_volunteers',
+      'field_task_max_volunteers', 'field_task_decide_by', 'field_task_decision_note'] as $field) {
+      unset($build[$field]);
+    }
+    if (!Opportunity::isApproved($node)) {
+      unset($build['flag_task_completed']);
+    }
+    _makehaven_tasks_volunteer_panel($build, $node);
+    return;
+  }
+  foreach (['field_task_stage', 'field_task_type', 'field_task_when', 'field_task_min_volunteers',
+    'field_task_max_volunteers', 'field_task_decide_by', 'field_task_decision_note'] as $field) {
+    unset($build[$field]);
   }
 
   // ── 3. Active task — claim / handoff / mark-done action panel ──
@@ -788,6 +987,90 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
 }
 
 /**
+ * The opportunity panel on a task page: stage banner, headcount, people,
+ * "I'm interested" / sign-up, and (for staff) the approve / decline form.
+ */
+function _makehaven_tasks_volunteer_panel(array &$build, NodeInterface $node): void {
+  $account = \Drupal::currentUser();
+  /** @var \Drupal\makehaven_tasks\Volunteer\SignupStore $signups */
+  $signups = \Drupal::service('makehaven_tasks.volunteer_signups');
+  $stage = Opportunity::stage($node);
+  $uid = (int) $account->id();
+  $esc = fn($t) => htmlspecialchars((string) $t, ENT_QUOTES, 'UTF-8');
+
+  $banner = '';
+  switch ($stage) {
+    case Opportunity::STAGE_PROPOSED:
+      $banner = '<div class="vol-banner vol-banner--draft"><strong>' . t('Draft') . '</strong> ' . t('Not on the board yet. A facilitator or staff member puts it out to gather interest.') . '</div>';
+      break;
+
+    case Opportunity::STAGE_GATHERING:
+      $banner = '<div class="vol-banner vol-banner--gathering"><strong>' . t('Gathering interest') . '</strong> ' . t('It goes ahead once enough people are in and staff approve it.') . '</div>';
+      break;
+
+    case Opportunity::STAGE_DECLINED:
+    case Opportunity::STAGE_CANCELLED:
+      $note = $node->hasField('field_task_decision_note') ? (string) $node->get('field_task_decision_note')->value : '';
+      $banner = '<div class="vol-banner vol-banner--declined"><strong>' . ($stage === Opportunity::STAGE_DECLINED ? t('Declined') : t('Cancelled')) . '</strong> '
+        . ($note !== '' ? $esc($note) : t('Not going ahead.')) . '</div>';
+      break;
+
+    default:
+      $banner = '<div class="vol-banner vol-banner--approved"><strong>' . t("It's on") . '</strong></div>';
+  }
+
+  $html = $banner;
+  if ($stage !== Opportunity::STAGE_DECLINED && $stage !== Opportunity::STAGE_CANCELLED) {
+    $html .= \Drupal\makehaven_tasks\Form\VolunteerDecisionForm::summaryHtml($node, $signups);
+    $can_join = in_array($stage, [Opportunity::STAGE_GATHERING, Opportunity::STAGE_APPROVED], TRUE);
+    if ($can_join && $account->isAuthenticated()) {
+      $interest_url = Url::fromRoute('makehaven_tasks.interest', ['node' => $node->id()])->toString();
+      $gathering = $stage === Opportunity::STAGE_GATHERING;
+      if ($signups->has($node, $uid)) {
+        $html .= '<div class="tap-primary-row"><span class="tap-btn tap-btn--claimed">✓ ' . ($gathering ? t("You're interested") : t("You're on the roster")) . '</span>'
+          . ' <a class="tap-link" href="' . $interest_url . '">' . t('Change my note or take my name off') . '</a></div>';
+      }
+      elseif ($reason = \Drupal\makehaven_tasks\Form\VolunteerInterestForm::closedReason($node, $uid, $signups)) {
+        $html .= '<div class="tap-primary-row"><span class="tap-btn tap-btn--claimed">' . $esc($reason) . '</span></div>';
+      }
+      else {
+        $html .= '<div class="tap-primary-row"><a class="tap-btn tap-btn--claim" href="' . $interest_url . '">' . ($gathering ? '🙋 ' . t("I'm interested") : '✋ ' . t('Sign me up')) . '</a></div>';
+      }
+    }
+  }
+
+  // Same render key as the claim panel: the makerspace_gin node--task
+  // template prints named keys only, and this panel takes the claim panel's
+  // place for opportunities that are not approved plain tasks.
+  $build['task_status_actions'] = [
+    '#type' => 'container',
+    '#attributes' => ['class' => ['task-action-panel', 'vol-panel']],
+    '#weight' => -10,
+    'content' => ['#markup' => \Drupal\Core\Render\Markup::create($html)],
+    '#cache' => ['tags' => ['makehaven_tasks_signups'], 'contexts' => ['user']],
+  ];
+  if (isset($build['flag_task_completed'])) {
+    $build['task_status_actions']['flag'] = $build['flag_task_completed'];
+    $build['task_status_actions']['flag']['#weight'] = 10;
+    unset($build['flag_task_completed']);
+  }
+
+  // Staff decide here too; facilitators can release a draft.
+  $can_decide = ($stage === Opportunity::STAGE_GATHERING && $account->hasPermission('makehaven_tasks.manage_tasks'))
+    || ($stage === Opportunity::STAGE_PROPOSED && $account->hasPermission('makehaven_tasks.create_task'));
+  if ($can_decide) {
+    $form = \Drupal::classResolver(\Drupal\makehaven_tasks\Form\VolunteerDecisionForm::class)->setNid((int) $node->id());
+    $build['task_status_actions']['decide'] = [
+      '#type' => 'container',
+      '#attributes' => ['class' => ['vol-decide']],
+      '#weight' => 20,
+      'label' => ['#markup' => '<h3 class="vol-decide__title">' . t('Staff decision') . '</h3>'],
+      'form' => \Drupal::formBuilder()->getForm($form, $node, TRUE),
+    ];
+  }
+}
+
+/**
  * Implements hook_node_links_alter().
  *
  * Removes the duplicate flag link from the node links area on task full pages.
@@ -812,6 +1095,18 @@ function makehaven_tasks_node_links_alter(array &$links, NodeInterface $node, ar
  * Generates occurrences for series source tasks whose next due date has passed.
  */
 function makehaven_tasks_cron() {
+  // Volunteer board rules (decide-by, needs-more, stale-claim nudges). Kept
+  // first and isolated: the series logic below returns early when idle, and
+  // a failure here must not stop occurrence generation (or vice versa).
+  if (Opportunity::fieldsInstalled()) {
+    try {
+      \Drupal::service('makehaven_tasks.volunteer_decider')->tick();
+    }
+    catch (\Throwable $e) {
+      \Drupal::logger('makehaven_tasks')->error('Volunteer board cron failed: @error', ['@error' => $e->getMessage()]);
+    }
+  }
+
   $frequency_days = [
     'weekly' => 7,
     'monthly' => 30,
@@ -1415,6 +1710,30 @@ function makehaven_tasks_preprocess_views_view(&$variables) {
   $variables['#attached']['library'][] = 'makehaven_tasks/task_actions';
 
   $account = \Drupal::currentUser();
+
+  // Volunteer board sections (gathering interest, coming up) and the skill /
+  // interest filters, above the ongoing task list.
+  if (Opportunity::fieldsInstalled()) {
+    $request = \Drupal::request();
+    $filters = BoardBuilder::filters($request);
+    /** @var \Drupal\makehaven_tasks\Volunteer\BoardBuilder $board */
+    $board = \Drupal::service('makehaven_tasks.volunteer_board');
+    $variables['header']['volunteer_filters'] = [
+      '#markup' => \Drupal\Core\Render\Markup::create($board->filterBarHtml($filters, $request->getPathInfo())),
+      '#weight' => 10,
+    ];
+    $variables['header']['volunteer_sections'] = [
+      '#markup' => \Drupal\Core\Render\Markup::create($board->sectionsHtml($filters, $account)),
+      '#weight' => 20,
+      // Sign-ups do not re-save the node, so they carry their own tag.
+      '#cache' => [
+        'tags' => ['node_list', 'makehaven_tasks_signups'],
+        'contexts' => ['user', 'url.query_args'],
+        'max-age' => 3600,
+      ],
+    ];
+  }
+
   if (!$account->isAuthenticated()) {
     return;
   }
@@ -1431,6 +1750,14 @@ function makehaven_tasks_preprocess_views_view(&$variables) {
   }
 
   // Right side — action buttons (permission-gated).
+  $right .= '<a href="' . \Drupal\Core\Url::fromRoute('makehaven_tasks.request')->toString() . '" class="task-staff-btn">💡 Suggest an opportunity</a>';
+  if ($account->hasPermission('makehaven_tasks.create_task') && Opportunity::fieldsInstalled()) {
+    $pending = (int) \Drupal::entityQuery('node')->accessCheck(FALSE)
+      ->condition('type', 'task')
+      ->condition('field_task_stage', [Opportunity::STAGE_PROPOSED, Opportunity::STAGE_GATHERING], 'IN')
+      ->count()->execute();
+    $right .= '<a href="' . \Drupal\Core\Url::fromRoute('makehaven_tasks.approvals')->toString() . '" class="task-staff-btn">✅ Approvals' . ($pending ? ' (' . $pending . ')' : '') . '</a>';
+  }
   if ($account->hasPermission('makehaven_tasks.create_task')) {
     $right .= '<a href="' . \Drupal\Core\Url::fromRoute('node.add', ['node_type' => 'task'])->toString() . '" class="task-staff-btn task-staff-btn--primary">+ Create task</a>';
   }
@@ -2007,4 +2334,15 @@ function _makehaven_tasks_write_maintenance_log(\Drupal\flag\FlaggingInterface $
       ['@nid' => $node->id(), '@item' => $item_node->id(), '@error' => $e->getMessage()]
     );
   }
+}
+
+/**
+ * Implements hook_mail().
+ *
+ * Volunteer-board mail builds its own subject and plain-text body (see
+ * \Drupal\makehaven_tasks\Volunteer\Notifier); this just hands them over.
+ */
+function makehaven_tasks_mail($key, &$message, $params) {
+  $message['subject'] = (string) ($params['subject'] ?? 'MakeHaven volunteer board');
+  $message['body'][] = (string) ($params['body'] ?? '');
 }

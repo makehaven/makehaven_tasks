@@ -1,0 +1,20 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_task_when
+    - node.type.task
+  module:
+    - datetime_range
+id: node.task.field_task_when
+field_name: field_task_when
+entity_type: node
+bundle: task
+label: When
+description: 'Start and end, for a dated shift.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: daterange

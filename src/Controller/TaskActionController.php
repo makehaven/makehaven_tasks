@@ -5,6 +5,7 @@ namespace Drupal\makehaven_tasks\Controller;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Url;
+use Drupal\makehaven_tasks\Volunteer\Opportunity;
 use Drupal\node\NodeInterface;
 use Drupal\user\Entity\User;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -35,6 +36,13 @@ class TaskActionController extends ControllerBase {
     $current_user = $this->currentUser();
     $uid = (int) $current_user->id();
     $node_url = Url::fromRoute('entity.node.canonical', ['node' => $node->id()])->toString();
+
+    // Only approved work can be claimed. While an opportunity gathers
+    // interest, people say "I'm interested" and approval assigns the lead.
+    if (!Opportunity::isApproved($node)) {
+      $this->messenger()->addWarning($this->t('This is not approved yet. Use "I\'m interested" and staff will assign it once it is approved.'));
+      return new RedirectResponse($node_url);
+    }
 
     // Guard 1: audience / badge restrictions.
     if ($denied = $this->audienceDenied($node, $current_user)) {
@@ -109,6 +117,13 @@ class TaskActionController extends ControllerBase {
     $current_user = $this->currentUser();
     $uid = (int) $current_user->id();
     $node_url = Url::fromRoute('entity.node.canonical', ['node' => $node->id()])->toString();
+
+    // Only approved work can be claimed. While an opportunity gathers
+    // interest, people say "I'm interested" and approval assigns the lead.
+    if (!Opportunity::isApproved($node)) {
+      $this->messenger()->addWarning($this->t('This is not approved yet. Use "I\'m interested" and staff will assign it once it is approved.'));
+      return new RedirectResponse($node_url);
+    }
 
     if ($denied = $this->audienceDenied($node, $current_user)) {
       $this->messenger()->addError($denied);

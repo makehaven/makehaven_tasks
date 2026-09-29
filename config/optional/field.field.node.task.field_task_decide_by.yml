@@ -1,0 +1,20 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_task_decide_by
+    - node.type.task
+  module:
+    - datetime
+id: node.task.field_task_decide_by
+field_name: field_task_decide_by
+entity_type: node
+bundle: task
+label: 'Decide by'
+description: 'While gathering interest: the date staff approve it, or it is quietly declined if too few people signed up. Empty means 8 days after posting.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: datetime

@@ -1,0 +1,26 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - node
+    - options
+id: node.field_task_type
+field_name: field_task_type
+entity_type: node
+type: list_string
+settings:
+  allowed_values:
+    -
+      value: task
+      label: 'Task (do it any time)'
+    -
+      value: shift
+      label: 'Dated shift (needs people on a date)'
+  allowed_values_function: ''
+module: options
+locked: false
+cardinality: 1
+translatable: true
+indexes: {  }
+persist_with_no_fields: false
+custom_storage: false

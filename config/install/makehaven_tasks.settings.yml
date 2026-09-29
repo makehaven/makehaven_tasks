@@ -1,1 +1,8 @@
 code_word: 'makers'
+volunteer_slack_channel: '#volunteers'
+ready_to_approve_email: 'staff@makehaven.org'
+gathering_days: 8
+short_reminder_days: 3
+member_suggestion_stage: 'gathering'
+stale_first_days: 14
+stale_second_days: 28

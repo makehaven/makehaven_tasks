@@ -147,6 +147,8 @@ class TasksDisplayController extends ControllerBase {
       .views-row.prio-3 { border-left-color: var(--mh-info); }
       .views-row.prio-4 { border-left-color: var(--mh-success); }
       .views-row.prio-none { border-left-color: var(--border); }
+      .views-row.vol-gathering { border-left-color: var(--mh-gold); }
+      .task-meta .chip.vol-chip, .views-row.vol-gathering .task-meta .chip { background: var(--mh-gold); color: #0d0d0f; }
 
       .view-display-id-page_tasks_display .task-title {
         font-family: 'Roboto Condensed', 'Montserrat', sans-serif;
@@ -370,6 +372,28 @@ CSS;
         '<div class="task-meta">' + meta.join('') + '</div>';
     }
 
+    // A volunteer opportunity still gathering interest: recruit for it.
+    function reframeGathering(row) {
+      var title = textOf(row, '.views-field-title');
+      var need = parseInt(row.getAttribute('data-need') || '0', 10);
+      var when = row.getAttribute('data-when') || '';
+      var decide = row.getAttribute('data-decide') || '';
+      row.dataset.prio = 0;
+      row.className = 'views-row vol-gathering';
+      var meta = ['<span class="chip">Volunteers wanted</span>'];
+      if (when) {
+        meta.push('<span class="meta-item"><b>' + esc(when) + '</b></span>');
+      }
+      meta.push('<span class="meta-item"><b>' + (need > 0 ? need + ' more needed' : 'Enough so far, more welcome') + '</b></span>');
+      if (decide) {
+        meta.push('<span class="meta-item"><span class="lbl">Sign up by</span> <b>' + esc(decide) + '</b></span>');
+      }
+      meta.push('<span class="meta-item"><span class="lbl">at</span> <b>makehaven.org/tasks</b></span>');
+      row.innerHTML =
+        '<h2 class="task-title">' + esc(title) + '</h2>' +
+        '<div class="task-meta">' + meta.join('') + '</div>';
+    }
+
     function esc(s) {
       var d = document.createElement('div');
       d.textContent = s;
@@ -469,7 +493,8 @@ CSS;
         : tmp.querySelector('.view-content');
 
       container.innerHTML = '';
-      if (!contentSrc || !contentSrc.querySelector('.views-row')) {
+      var gathering = Array.prototype.slice.call(tmp.querySelectorAll('.mh-gathering-src .views-row'));
+      if ((!contentSrc || !contentSrc.querySelector('.views-row')) && !gathering.length) {
         container.innerHTML = '<div class="boot-msg">No open tasks right now. Nice work! 🎉</div>';
         indicator.hidden = true;
         return;
@@ -481,8 +506,10 @@ CSS;
       wrap.appendChild(content);
       container.appendChild(wrap);
 
-      var rows = Array.prototype.slice.call(contentSrc.querySelectorAll('.views-row'));
+      var rows = contentSrc ? Array.prototype.slice.call(contentSrc.querySelectorAll('.views-row')) : [];
       rows.forEach(reframe);
+      gathering.forEach(reframeGathering);
+      rows = gathering.concat(rows);
       rows.sort(function (a, b) {
         return (parseInt(a.dataset.prio, 10)) - (parseInt(b.dataset.prio, 10));
       });
@@ -553,6 +580,7 @@ HTML;
 
       // Render the render array to HTML string.
       $html = \Drupal::service('renderer')->renderRoot($render_array);
+      $html .= $this->gatheringRowsHtml();
     }
     finally {
       // Always switch back.
@@ -560,6 +588,29 @@ HTML;
     }
 
     return new Response($html);
+  }
+
+  /**
+   * Volunteer opportunities gathering interest, as rows for the signage JS.
+   *
+   * Cheap recruitment on the in-building screens: title, how many more are
+   * needed and the sign-up deadline. Staff-only ones are left out.
+   */
+  protected function gatheringRowsHtml(): string {
+    if (!\Drupal\makehaven_tasks\Volunteer\Opportunity::fieldsInstalled()) {
+      return '';
+    }
+    $board = \Drupal::service('makehaven_tasks.volunteer_board');
+    $signups = \Drupal::service('makehaven_tasks.volunteer_signups');
+    $rows = '';
+    foreach ($board->gathering(['skill' => '', 'area' => ''], new \Drupal\Core\Session\AnonymousUserSession()) as $node) {
+      $need = max(0, \Drupal\makehaven_tasks\Volunteer\Opportunity::minNeeded($node) - $signups->count($node));
+      $rows .= '<div class="views-row" data-need="' . $need . '"'
+        . ' data-when="' . htmlspecialchars(\Drupal\makehaven_tasks\Volunteer\Opportunity::whenLabel($node), ENT_QUOTES) . '"'
+        . ' data-decide="' . htmlspecialchars(\Drupal\makehaven_tasks\Volunteer\Opportunity::dateLabel(\Drupal\makehaven_tasks\Volunteer\Opportunity::decideBy($node)), ENT_QUOTES) . '">'
+        . '<span class="views-field-title">' . htmlspecialchars((string) $node->label(), ENT_QUOTES) . '</span></div>';
+    }
+    return $rows !== '' ? '<div class="mh-gathering-src" hidden>' . $rows . '</div>' : '';
   }
 
   /**
