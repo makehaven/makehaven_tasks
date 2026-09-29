@@ -1,0 +1,28 @@
+makehaven_tasks.settings:
+  type: config_object
+  label: 'MakeHaven Tasks settings'
+  mapping:
+    code_word:
+      type: string
+      label: 'Signage display code word'
+    volunteer_slack_channel:
+      type: string
+      label: 'Slack channel for volunteer recruitment posts'
+    ready_to_approve_email:
+      type: string
+      label: 'Address that gets the "ready to approve" email'
+    gathering_days:
+      type: integer
+      label: 'Default days to gather interest before the decide-by date'
+    short_reminder_days:
+      type: integer
+      label: 'Days before decide-by to post one "needs N more" reminder'
+    member_suggestion_stage:
+      type: string
+      label: 'Stage a member-suggested opportunity starts in (gathering or proposed)'
+    stale_first_days:
+      type: integer
+      label: 'Days idle before the first stale-claim nudge'
+    stale_second_days:
+      type: integer
+      label: 'Days idle before the second stale-claim nudge'

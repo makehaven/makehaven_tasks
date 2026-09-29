@@ -1,0 +1,20 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_task_type
+    - node.type.task
+  module:
+    - options
+id: node.task.field_task_type
+field_name: field_task_type
+entity_type: node
+bundle: task
+label: Kind
+description: 'A task can be done any time by a lead and helpers. A dated shift (open house, build day, setup crew) needs a date and a headcount. Empty means task.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: list_string

@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_task_max_volunteers
+    - node.type.task
+id: node.task.field_task_max_volunteers
+field_name: field_task_max_volunteers
+entity_type: node
+bundle: task
+label: 'Most volunteers'
+description: 'Optional cap. Sign-up closes when it is reached.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  min: 1
+  max: null
+  prefix: ''
+  suffix: ''
+field_type: integer

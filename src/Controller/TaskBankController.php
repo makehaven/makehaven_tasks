@@ -34,8 +34,10 @@ class TaskBankController extends ControllerBase {
     // Non-staff users cannot see staff-only or badge-holder templates.
     $can_manage = $this->currentUser()->hasPermission('makehaven_tasks.manage_bank');
     if (!$can_manage) {
+      // 'open_member' is the real allowed value. The old code matched only
+      // 'members', which no task can hold, so members saw no open templates.
       $or = $query->orConditionGroup()
-        ->condition('field_task_audience', 'members')
+        ->condition('field_task_audience', ['open_member', 'members'], 'IN')
         ->notExists('field_task_audience');
       $query->condition($or);
     }

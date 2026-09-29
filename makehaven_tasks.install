@@ -5,10 +5,98 @@
  * Install and update hooks for the MakeHaven Tasks module.
  */
 
+use Drupal\Core\Config\FileStorage;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
+
+/**
+ * Implements hook_schema().
+ */
+function makehaven_tasks_schema(): array {
+  return [
+    'makehaven_task_signup' => [
+      'description' => 'Volunteer board: one row per person per task ("I\'m interested", then the roster).',
+      'fields' => [
+        'id' => ['type' => 'serial', 'unsigned' => TRUE, 'not null' => TRUE],
+        'nid' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE, 'description' => 'The task node.'],
+        'uid' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE, 'description' => 'The volunteer.'],
+        'note' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE, 'default' => '', 'description' => '"Saturdays only", "I can bring a truck".'],
+        'kind' => ['type' => 'varchar', 'length' => 16, 'not null' => TRUE, 'default' => 'interest', 'description' => 'interest (gathering) or confirmed (approved).'],
+        'created' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      ],
+      'primary key' => ['id'],
+      'unique keys' => ['nid_uid' => ['nid', 'uid']],
+      'indexes' => ['uid' => ['uid']],
+    ],
+  ];
+}
+
+/**
+ * Config names of the volunteer-board fields, storages before fields.
+ */
+function _makehaven_tasks_volunteer_field_config_names(): array {
+  $names = [];
+  foreach (['stage', 'type', 'when', 'min_volunteers', 'max_volunteers', 'decide_by', 'decision_note', 'interest'] as $field) {
+    $names[] = 'field.storage.node.field_task_' . $field;
+  }
+  foreach (['stage', 'type', 'when', 'min_volunteers', 'max_volunteers', 'decide_by', 'decision_note', 'interest'] as $field) {
+    $names[] = 'field.field.node.task.field_task_' . $field;
+  }
+  return $names;
+}
+
+/**
+ * Creates the volunteer-board fields and the sign-up table if missing.
+ *
+ * Each field is created from the site's config sync directory when it holds
+ * that object (so the UUID matches and a later `drush cim` sees no change,
+ * rather than a delete-and-recreate that would drop the field's data), and
+ * from the module's config/optional copy otherwise.
+ *
+ * @return string[]
+ *   The config names created.
+ */
+function _makehaven_tasks_install_volunteer_fields(): array {
+  $schema = \Drupal::database()->schema();
+  if (!$schema->tableExists('makehaven_task_signup')) {
+    $schema->createTable('makehaven_task_signup', makehaven_tasks_schema()['makehaven_task_signup']);
+  }
+
+  $module_storage = new FileStorage(\Drupal::service('extension.list.module')->getPath('makehaven_tasks') . '/config/optional');
+  $sync_storage = NULL;
+  try {
+    $sync_storage = \Drupal::service('config.storage.sync');
+  }
+  catch (\Throwable $e) {
+    // No sync directory (tests); fall back to the module copy.
+  }
+
+  $created = [];
+  $etm = \Drupal::entityTypeManager();
+  foreach (_makehaven_tasks_volunteer_field_config_names() as $name) {
+    $is_storage = str_starts_with($name, 'field.storage.');
+    $entity_type = $is_storage ? 'field_storage_config' : 'field_config';
+    $id = $is_storage ? substr($name, strlen('field.storage.')) : substr($name, strlen('field.field.'));
+    $storage = $etm->getStorage($entity_type);
+    if ($storage->load($id)) {
+      continue;
+    }
+    $data = ($sync_storage && $sync_storage->exists($name)) ? $sync_storage->read($name) : $module_storage->read($name);
+    if (!$data) {
+      continue;
+    }
+    unset($data['_core']);
+    // Each field save rebuilds field caches, which CiviCRM hooks make slow
+    // (about 10 s each locally): restart the clock per object so 16 of them
+    // cannot hit a 120 s max_execution_time mid-update.
+    \Drupal\Component\Utility\Environment::setTimeLimit(120);
+    $storage->createFromStorageRecord($data)->save();
+    $created[] = $name;
+  }
+  return $created;
+}
 
 /**
  * Phase 1 enhancements: add category, biennial frequency, instructions, video.
@@ -524,4 +612,42 @@ function makehaven_tasks_update_9006() {
   }
 
   return t('Added @fields.', ['@fields' => $messages ? implode(', ', $messages) : 'no new fields (already present)']);
+}
+
+/**
+ * Volunteer board, phase 1: opportunity fields, sign-up table, settings.
+ *
+ * Adds stage, kind, when, volunteers needed/most, decide-by, decision note
+ * and interest area to the task type, all optional: an empty stage reads as
+ * approved, so every existing task is untouched. Adds the
+ * makehaven_task_signup table and the new makehaven_tasks.settings keys.
+ */
+function makehaven_tasks_update_9007() {
+  $created = _makehaven_tasks_install_volunteer_fields();
+
+  $config = \Drupal::configFactory()->getEditable('makehaven_tasks.settings');
+  $defaults = [
+    'volunteer_slack_channel' => '#volunteers',
+    'ready_to_approve_email' => 'staff@makehaven.org',
+    'gathering_days' => 8,
+    'short_reminder_days' => 3,
+    'member_suggestion_stage' => 'gathering',
+    'stale_first_days' => 14,
+    'stale_second_days' => 28,
+  ];
+  $set = [];
+  foreach ($defaults as $key => $value) {
+    if ($config->get($key) === NULL) {
+      $config->set($key, $value);
+      $set[] = $key;
+    }
+  }
+  if ($set) {
+    $config->save();
+  }
+
+  return t('Volunteer board: created @fields; set @settings.', [
+    '@fields' => $created ? implode(', ', $created) : 'no new fields (already present)',
+    '@settings' => $set ? implode(', ', $set) : 'no new settings',
+  ]);
 }

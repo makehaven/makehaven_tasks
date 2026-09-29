@@ -1300,3 +1300,90 @@ article.node--type-task h1.title {
   border-radius: 999px;
   border: 1px solid #cfe2ff;
 }
+
+/* ── Volunteer board (gathering interest, coming up, approvals) ───────────
+   Token names follow tokens.css; fallbacks keep makerspace_gin (which does
+   not load the d11 token file) on-brand. */
+.vol-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  margin: 0.75rem 0 1rem;
+}
+.vol-filters select {
+  max-width: 100%;
+  min-height: 2.25rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--mh-color-border, #d9d9d9);
+  border-radius: 6px;
+  background: var(--mh-color-surface, #fff);
+}
+.vol-filter-clear { font-size: 0.9rem; }
+.vol-section { margin: 0 0 1.5rem; }
+.vol-section h2, .vol-ongoing-heading { font-size: 1.3rem; margin: 1rem 0 0.35rem; }
+.vol-help { color: var(--mh-color-neutral-600, #616161); font-size: 0.92rem; margin: 0 0 0.75rem; }
+.vol-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  gap: 0.75rem;
+}
+.vol-card {
+  border: 1px solid var(--mh-color-border, #d9d9d9);
+  border-left: 5px solid var(--mh-color-accent-gold, #ffc658);
+  border-radius: 8px;
+  padding: 0.75rem 0.9rem;
+  background: var(--mh-color-surface, #fff);
+  min-width: 0;
+}
+.vol-card__title { font-size: 1.05rem; margin: 0.35rem 0; overflow-wrap: anywhere; }
+.vol-card__meta { font-size: 0.9rem; color: var(--mh-color-neutral-700, #4a4a4a); }
+.vol-card__people { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.4rem; }
+.vol-card .task-card-actions { margin-top: 0.5rem; }
+.vol-chip {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 0.1rem 0.5rem;
+  margin-right: 0.3rem;
+  border-radius: 999px;
+  background: var(--mh-color-neutral-150, #e7e7e7);
+  color: var(--mh-color-neutral-900, #1e1f24);
+}
+.vol-chip--gathering { background: var(--mh-color-accent-gold, #ffc658); }
+.vol-chip--shift { background: var(--mh-color-info, #4ea1d3); color: #0d0d0f; }
+.vol-count { font-weight: 700; }
+.vol-count--ok { color: var(--mh-color-success, #1f8c5b); }
+.vol-count--short { color: var(--mh-color-brand-primary, #8b1919); }
+.vol-people { margin: 0.4rem 0 0.2rem 1.1rem; padding: 0; font-size: 0.92rem; }
+.vol-banner {
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  margin-bottom: 0.6rem;
+  background: var(--mh-color-surface-muted, #f8f9fa);
+  border-left: 5px solid var(--mh-color-neutral-400, #9e9e9e);
+}
+.vol-banner--gathering { border-left-color: var(--mh-color-accent-gold, #ffc658); }
+.vol-banner--approved { border-left-color: var(--mh-color-success, #1f8c5b); }
+.vol-banner--declined { border-left-color: var(--mh-color-brand-primary, #8b1919); }
+.vol-banner--draft { border-left-color: var(--mh-color-neutral-500, #7c7c7c); }
+.vol-decide { margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px dashed var(--mh-color-border, #d9d9d9); }
+.vol-decide__title { font-size: 1rem; margin: 0 0 0.3rem; }
+.vol-decide-form .vol-decide-buttons, .vol-decide-form .form-item { display: inline-flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.2rem 0.4rem 0.2rem 0; align-items: center; }
+.vol-decide-form input[type="text"] { max-width: 100%; }
+.vol-approvals-section { margin-bottom: 2rem; }
+.vol-approvals-section .table, .vol-approvals-section table { display: block; overflow-x: auto; max-width: 100%; }
+.vol-approval-row {
+  border: 1px solid var(--mh-color-border, #d9d9d9);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.6rem;
+  background: var(--mh-color-surface, #fff);
+}
+.vol-row-head { overflow-wrap: anywhere; }
+.vol-kind { font-size: 0.8rem; color: var(--mh-color-neutral-600, #616161); }
+.vol-overdue { font-size: 0.8rem; font-weight: 700; color: var(--mh-color-brand-primary, #8b1919); }
+.vol-meta { font-size: 0.85rem; color: var(--mh-color-neutral-600, #616161); }
+.vol-form-summary { font-size: 1rem; }

@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_task_min_volunteers
+    - node.type.task
+id: node.task.field_task_min_volunteers
+field_name: field_task_min_volunteers
+entity_type: node
+bundle: task
+label: 'Volunteers needed'
+description: 'The minimum number of people it needs to go ahead. Empty means 1 for a task and 2 for a shift.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  min: 1
+  max: null
+  prefix: ''
+  suffix: ''
+field_type: integer

@@ -1,10 +1,14 @@
 name: 'MakeHaven Tasks'
 type: module
-description: 'Manages tasks, completion flags, and notifications.'
+description: 'The volunteer board: tasks, dated shifts and opportunities that gather interest before staff approve them; completion flags and notifications.'
 core_version_requirement: ^10 || ^11
 package: Makerspace
 dependencies:
-  - flag
-  - node
-  - slack_task_poster
+  - drupal:datetime
+  - drupal:datetime_range
+  - drupal:options
+  - drupal:taxonomy
+  - flag:flag
+  - drupal:node
+  - slack_task_poster:slack_task_poster
 configure: makehaven_tasks.settings_form

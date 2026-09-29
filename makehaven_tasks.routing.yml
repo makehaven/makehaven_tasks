@@ -42,7 +42,7 @@ makehaven_tasks.request:
   path: '/tasks/request'
   defaults:
     _form: '\Drupal\makehaven_tasks\Form\TaskRequestForm'
-    _title: 'Request a volunteer maintenance task'
+    _title: 'Suggest a volunteer opportunity'
   requirements:
     _user_is_logged_in: 'TRUE'
 
@@ -113,3 +113,50 @@ makehaven_tasks.display_fragment:
     _title: 'Tasks Display Fragment'
   requirements:
     _access: 'TRUE'
+
+makehaven_tasks.volunteer:
+  path: '/volunteer'
+  defaults:
+    _controller: '\Drupal\views\Routing\ViewPageController::handle'
+    view_id: tasks
+    display_id: page_tasks_interactive
+    _title: 'Volunteer'
+  requirements:
+    _permission: 'access content'
+  options:
+    _view_display_plugin_class: '\Drupal\views\Plugin\views\display\Page'
+    _view_argument_map: {  }
+
+makehaven_tasks.approvals:
+  path: '/tasks/approvals'
+  defaults:
+    _controller: '\Drupal\makehaven_tasks\Controller\VolunteerApprovalsController::page'
+    _title: 'Volunteer approvals'
+  requirements:
+    _permission: 'makehaven_tasks.create_task'
+
+makehaven_tasks.interest:
+  path: '/tasks/{node}/interest'
+  defaults:
+    _form: '\Drupal\makehaven_tasks\Form\VolunteerInterestForm'
+    _title: "I'm interested"
+  requirements:
+    _user_is_logged_in: 'TRUE'
+    node: '\d+'
+  options:
+    parameters:
+      node:
+        type: entity:node
+
+makehaven_tasks.decide:
+  path: '/tasks/{node}/decide'
+  defaults:
+    _form: '\Drupal\makehaven_tasks\Form\VolunteerDecisionForm'
+    _title: 'Approve or decline'
+  requirements:
+    _permission: 'makehaven_tasks.create_task'
+    node: '\d+'
+  options:
+    parameters:
+      node:
+        type: entity:node
