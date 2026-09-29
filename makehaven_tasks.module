@@ -1750,7 +1750,8 @@ function makehaven_tasks_preprocess_views_view(&$variables) {
   }
 
   // Right side — action buttons (permission-gated).
-  $right .= '<a href="' . \Drupal\Core\Url::fromRoute('makehaven_tasks.request')->toString() . '" class="task-staff-btn">💡 Suggest an opportunity</a>';
+  $right .= '<a href="' . \Drupal\Core\Url::fromRoute('makehaven_tasks.request')->toString() . '" class="task-staff-btn">'
+    . ($account->hasPermission('makehaven_tasks.create_task') ? '📣 Post an opportunity' : '💡 Suggest an opportunity') . '</a>';
   if ($account->hasPermission('makehaven_tasks.create_task') && Opportunity::fieldsInstalled()) {
     $pending = (int) \Drupal::entityQuery('node')->accessCheck(FALSE)
       ->condition('type', 'task')

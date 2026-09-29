@@ -125,7 +125,7 @@ final class Notifier {
         sprintf('Hi %s,', $user->getDisplayName()),
         sprintf('Thank you for offering to help with "%s". It is not going ahead this time.', $node->label()),
         $note !== '' ? 'Why: ' . $note : '',
-        'There is always something else on the volunteer board: ' . $this->absolute('makehaven_tasks.volunteer'),
+        'There is always something else on the volunteer board: ' . $this->boardUrl(),
       ])));
     }
   }
@@ -244,6 +244,20 @@ final class Notifier {
     }
     $base = rtrim((string) (Settings::get('makehaven_tasks_base_url') ?: 'https://www.makehaven.org'), '/');
     return $base . Url::fromRoute($route, $params)->toString();
+  }
+
+  /**
+   * The board, by path: /volunteer is a legacy redirect on live, and the
+   * board's route comes from a view that may not exist (tests, a broken view),
+   * which must never stop a decline email going out.
+   */
+  private function boardUrl(): string {
+    $url = Url::fromUserInput('/tasks', ['absolute' => TRUE])->toString();
+    $host = parse_url($url, PHP_URL_HOST);
+    if ($host && $host !== 'default') {
+      return $url;
+    }
+    return rtrim((string) (Settings::get('makehaven_tasks_base_url') ?: 'https://www.makehaven.org'), '/') . '/tasks';
   }
 
   /**

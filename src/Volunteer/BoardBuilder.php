@@ -227,15 +227,27 @@ final class BoardBuilder {
   public function sectionsHtml(array $filters, AccountInterface $account): string {
     $html = '';
     $gathering = $this->gathering($filters, $account);
+    // Always rendered, even when empty: with nothing gathering, a board that
+    // shows only the task list gives no hint that opportunities exist or where
+    // to post one (JR, 2026-09-29, first look at live).
+    $post_url = Url::fromRoute('makehaven_tasks.request')->toString();
+    $elevated = $account->hasPermission('makehaven_tasks.create_task');
+    $post_label = $elevated ? t('Post a volunteer opportunity') : t('Suggest an opportunity');
+    $html .= '<section class="vol-section" aria-labelledby="vol-gathering"><h2 id="vol-gathering">' . t('Gathering interest') . '</h2>'
+      . '<p class="vol-help">' . t('Ideas that go ahead once enough people are in: a build day, a clean-up, staffing a table at a community event. Tap "I\'m interested" on one and staff confirm it once enough people have signed up. Saying you are interested is not a promise.') . '</p>';
     if ($gathering) {
-      $html .= '<section class="vol-section" aria-labelledby="vol-gathering"><h2 id="vol-gathering">' . t('Gathering interest') . '</h2>'
-        . '<p class="vol-help">' . t('Ideas that go ahead once enough people are in. Saying you are interested is not a promise.') . '</p>'
-        . '<div class="vol-cards">';
+      $html .= '<div class="vol-cards">';
       foreach ($gathering as $node) {
         $html .= $this->cardHtml($node, $account);
       }
-      $html .= '</div></section>';
+      $html .= '</div>';
     }
+    else {
+      $html .= '<p class="vol-empty">' . t('Nothing is gathering volunteers right now.') . '</p>';
+    }
+    $html .= '<p class="vol-post"><a class="task-staff-btn task-staff-btn--primary" href="' . $post_url . '">' . $post_label . '</a>'
+      . ($elevated ? ' <span class="vol-help">' . t('Staff and facilitators: a dated shift (such as tabling at an event) can gather interest first or go straight to the board with its crew.') . '</span>' : '')
+      . '</p></section>';
     $coming = $this->comingUp($filters, $account);
     if ($coming) {
       $html .= '<section class="vol-section" aria-labelledby="vol-coming"><h2 id="vol-coming">' . t('Coming up') . '</h2><div class="vol-cards">';

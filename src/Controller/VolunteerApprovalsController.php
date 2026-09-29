@@ -40,7 +40,7 @@ final class VolunteerApprovalsController extends ControllerBase {
       '#attached' => ['library' => ['makehaven_tasks/task_actions']],
       '#cache' => ['max-age' => 0],
     ];
-    $board = Url::fromRoute('makehaven_tasks.volunteer')->toString();
+    $board = Url::fromRoute('view.tasks.page_tasks_interactive')->toString();
     $build['nav'] = ['#markup' => '<div class="task-back-link"><a href="' . $board . '">← Volunteer board</a></div>'];
 
     if (!Opportunity::fieldsInstalled()) {

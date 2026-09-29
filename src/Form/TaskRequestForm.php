@@ -53,8 +53,8 @@ final class TaskRequestForm extends FormBase {
 
     $bank_link = Url::fromRoute('makehaven_tasks.bank')->toString();
     $form['intro'] = [
-      '#markup' => '<p>' . $this->t('Suggest something volunteers could do: fix or clean something, run a build day, help at an event. It goes on the <a href=":board">volunteer board</a> so people can say they are interested, and staff approve it once enough people are in. For a regular chore that is already in the <a href=":bank">task bank</a>, just start it from there; no approval needed. For damage or a safety concern, use the issue report on the tool page instead.', [
-        ':board' => Url::fromRoute('makehaven_tasks.volunteer')->toString(),
+      '#markup' => '<p>' . $this->t('Suggest something volunteers could do: fix or clean something, run a build day, staff a table at a community event. It goes on the <a href=":board">volunteer board</a> so people can say they are interested, and staff approve it once enough people are in. For a regular chore that is already in the <a href=":bank">task bank</a>, just start it from there; no approval needed. For damage or a safety concern, use the issue report on the tool page instead.', [
+        ':board' => Url::fromRoute('view.tasks.page_tasks_interactive')->toString(),
         ':bank' => $bank_link,
       ]) . '</p>',
     ];
@@ -78,7 +78,7 @@ final class TaskRequestForm extends FormBase {
         '#title' => $this->t('Kind'),
         '#options' => [
           Opportunity::TYPE_TASK => $this->t('A task: can be done any time'),
-          Opportunity::TYPE_SHIFT => $this->t('A dated shift: needs people on a particular date'),
+          Opportunity::TYPE_SHIFT => $this->t('A dated shift: needs people on a particular date (an open house, a build day, staffing a table at an event)'),
         ],
         '#default_value' => Opportunity::TYPE_TASK,
       ];

@@ -1323,6 +1323,9 @@ article.node--type-task h1.title {
 .vol-section { margin: 0 0 1.5rem; }
 .vol-section h2, .vol-ongoing-heading { font-size: 1.3rem; margin: 1rem 0 0.35rem; }
 .vol-help { color: var(--mh-color-neutral-600, #616161); font-size: 0.92rem; margin: 0 0 0.75rem; }
+.vol-empty { font-style: italic; margin: 0 0 0.75rem; }
+.vol-post { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin: 0 0 1rem; }
+.vol-post .vol-help { margin: 0; }
 .vol-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
