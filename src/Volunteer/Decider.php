@@ -118,10 +118,24 @@ final class Decider {
     if (!$node->hasField('field_task_stage')) {
       return;
     }
-    if (Opportunity::isGathering($node) && $node->get('field_task_decide_by')->isEmpty()) {
-      $created = (int) ($node->getCreatedTime() ?: $this->time->getCurrentTime());
+    // A proposed draft is visible only to staff, facilitators and the poster:
+    // keep it unpublished so neither the board nor slack_task_poster sees it.
+    if (Opportunity::stage($node) === Opportunity::STAGE_PROPOSED && $node->isPublished()) {
+      $node->setUnpublished();
+    }
+    if (!Opportunity::isGathering($node)) {
+      return;
+    }
+    $now = $this->time->getCurrentTime();
+    $original = method_exists($node, 'getOriginal') ? $node->getOriginal() : ($node->original ?? NULL);
+    $entering = !$original || !Opportunity::isGathering($original);
+    $decide_by = Opportunity::decideBy($node);
+    // The window starts when the opportunity starts gathering, not when the
+    // node was written: an old task switched to "Gathering interest" on the
+    // node form would otherwise get a decide-by already in the past.
+    if ($decide_by === NULL || ($entering && $decide_by < $now + Opportunity::MIN_WINDOW)) {
       $days = (int) ($this->settings()->get('gathering_days') ?: 8);
-      $node->set('field_task_decide_by', Opportunity::timestampToStorage(Opportunity::defaultDecideBy($created, Opportunity::start($node), $days)));
+      $node->set('field_task_decide_by', Opportunity::timestampToStorage(Opportunity::defaultDecideBy($now, Opportunity::start($node), $days)));
     }
   }
 
@@ -222,7 +236,10 @@ final class Decider {
         }
         continue;
       }
-      if (!$enough && $decide_by - $now <= $short_days * 86400 && !$sent->has($nid . ':short')) {
+      // Not within a day of the recruitment call: a short window would
+      // otherwise post "needs N more" minutes after the first post.
+      $recruited = (int) ($sent->get($nid . ':recruit') ?? 0);
+      if (!$enough && $decide_by - $now <= $short_days * 86400 && $now - $recruited >= 86400 && !$sent->has($nid . ':short')) {
         $log[] = "needs-more post: $label";
         if (!$dry_run) {
           $this->notifier->short($node);

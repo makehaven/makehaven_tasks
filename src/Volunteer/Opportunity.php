@@ -17,6 +17,16 @@ use Drupal\node\NodeInterface;
  */
 final class Opportunity {
 
+  /**
+   * Shortest time an opportunity gathers interest before it is decided.
+   */
+  public const MIN_WINDOW = 86400;
+
+  /**
+   * A dated shift gathering interest must start at least this far ahead.
+   */
+  public const MIN_LEAD = 2 * 86400;
+
   public const STAGE_PROPOSED = 'proposed';
   public const STAGE_GATHERING = 'gathering';
   public const STAGE_APPROVED = 'approved';
@@ -121,13 +131,18 @@ final class Opportunity {
 
   /**
    * The default decide-by: created + N days, capped at the day before start.
+   *
+   * Never less than MIN_WINDOW after $created: a shift starting tomorrow
+   * would otherwise get a decide-by already in the past, and the next cron
+   * would decline it (emailing whoever signed up) or ask staff to approve it
+   * before anyone had seen it.
    */
   public static function defaultDecideBy(int $created, ?int $start, int $days): int {
     $decide = $created + max(1, $days) * 86400;
     if ($start) {
       $decide = min($decide, $start - 86400);
     }
-    return $decide;
+    return max($decide, $created + self::MIN_WINDOW);
   }
 
   /**

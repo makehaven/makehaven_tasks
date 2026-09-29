@@ -7,6 +7,7 @@ namespace Drupal\makehaven_tasks\Volunteer;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\IntegrityConstraintViolationException;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\node\NodeInterface;
 use Drupal\user\UserInterface;
@@ -56,15 +57,21 @@ final class SignupStore {
       $this->invalidate($node);
       return FALSE;
     }
-    $this->database->insert(self::TABLE)
-      ->fields([
-        'nid' => (int) $node->id(),
-        'uid' => $uid,
-        'note' => $note,
-        'kind' => $kind,
-        'created' => $this->time->getCurrentTime(),
-      ])
-      ->execute();
+    try {
+      $this->database->insert(self::TABLE)
+        ->fields([
+          'nid' => (int) $node->id(),
+          'uid' => $uid,
+          'note' => $note,
+          'kind' => $kind,
+          'created' => $this->time->getCurrentTime(),
+        ])
+        ->execute();
+    }
+    catch (IntegrityConstraintViolationException $e) {
+      // A double-submit raced the check above: the row is already there.
+      return FALSE;
+    }
     $this->invalidate($node);
     return TRUE;
   }

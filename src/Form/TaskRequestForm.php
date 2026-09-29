@@ -162,8 +162,8 @@ final class TaskRequestForm extends FormBase {
       if (!$start instanceof DrupalDateTime) {
         $form_state->setErrorByName('start', $this->t('A dated shift needs a start date and time.'));
       }
-      elseif ($start->getTimestamp() <= \Drupal::time()->getCurrentTime()) {
-        $form_state->setErrorByName('start', $this->t('The start must be in the future.'));
+      elseif ($start->getTimestamp() < \Drupal::time()->getCurrentTime() + Opportunity::MIN_LEAD) {
+        $form_state->setErrorByName('start', $this->t('Suggest a shift at least two days ahead, so people have time to sign up and staff to approve it.'));
       }
       $end = $form_state->getValue('end');
       if ($start instanceof DrupalDateTime && $end instanceof DrupalDateTime && $end->getTimestamp() <= $start->getTimestamp()) {

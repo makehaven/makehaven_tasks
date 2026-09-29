@@ -142,6 +142,7 @@ makehaven_tasks.interest:
     _title: "I'm interested"
   requirements:
     _user_is_logged_in: 'TRUE'
+    _entity_access: 'node.view'
     node: '\d+'
   options:
     parameters:

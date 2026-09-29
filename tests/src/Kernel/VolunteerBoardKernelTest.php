@@ -127,7 +127,7 @@ class VolunteerBoardKernelTest extends KernelTestBase {
   public function testGatheringDefaultsAndRecruitmentPost(): void {
     $task = $this->createTask(['field_task_stage' => 'gathering', 'uid' => $this->alice->id()]);
     $expected = $task->getCreatedTime() + 8 * 86400;
-    $this->assertEqualsWithDelta($expected, Opportunity::decideBy($task), 1, 'Decide-by defaults to created + 8 days.');
+    $this->assertEqualsWithDelta($expected, Opportunity::decideBy($task), 60, 'Decide-by defaults to 8 days from when it starts gathering.');
 
     $volunteer_posts = $this->slackPosts('#volunteers');
     $this->assertCount(1, $volunteer_posts, 'One recruitment post to #volunteers.');
@@ -246,6 +246,51 @@ class VolunteerBoardKernelTest extends KernelTestBase {
     $this->decider()->tick($when);
     $this->decider()->tick($when + 3600);
     $this->assertCount(1, $this->slackPosts('#volunteers', 'needs *2 more*'));
+  }
+
+  /**
+   * An old task switched to gathering gets a window from now, not from created.
+   */
+  public function testOldTaskSwitchedToGatheringGetsFreshWindow(): void {
+    $now = \Drupal::time()->getCurrentTime();
+    $task = $this->createTask(['created' => $now - 60 * 86400]);
+    $task->set('field_task_stage', 'gathering')->save();
+    $this->assertEqualsWithDelta($now + 8 * 86400, Opportunity::decideBy($task), 60);
+
+    $this->resetOutbound();
+    $this->decider()->tick($now + 3600);
+    $this->assertSame('gathering', Opportunity::stage(Node::load($task->id())), 'Not declined on the next cron.');
+    $this->assertEmpty(\Drupal::state()->get('system.test_mail_collector', []));
+  }
+
+  /**
+   * A shift starting within a day is not decided on the next cron.
+   */
+  public function testShortNoticeShiftIsNotDecidedImmediately(): void {
+    $now = \Drupal::time()->getCurrentTime();
+    $start = $now + 10 * 3600;
+    $task = $this->createTask([
+      'field_task_stage' => 'gathering',
+      'field_task_type' => 'shift',
+      'field_task_when' => ['value' => gmdate('Y-m-d\TH:i:s', $start), 'end_value' => gmdate('Y-m-d\TH:i:s', $start + 7200)],
+    ]);
+    $this->assertGreaterThanOrEqual($now + Opportunity::MIN_WINDOW, Opportunity::decideBy($task));
+
+    $this->resetOutbound();
+    $this->decider()->tick($now + 3600);
+    $this->assertSame('gathering', Opportunity::stage(Node::load($task->id())));
+    $this->assertEmpty(\Drupal::state()->get('system.test_mail_collector', []));
+    $this->assertCount(0, $this->slackPosts('#volunteers', 'more*'), 'No "needs more" post right after the recruitment call.');
+  }
+
+  /**
+   * A proposed draft is kept unpublished, so nothing posts it to Slack.
+   */
+  public function testProposedDraftIsUnpublishedAndNotPosted(): void {
+    $this->resetOutbound();
+    $task = $this->createTask(['field_task_stage' => 'proposed']);
+    $this->assertFalse(Node::load($task->id())->isPublished());
+    $this->assertSame([], $this->httpHistory, 'No Slack post for a proposed draft.');
   }
 
   // ── Stale claims ───────────────────────────────────────────────────────────

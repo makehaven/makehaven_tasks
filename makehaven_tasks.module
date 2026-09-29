@@ -360,6 +360,17 @@ function _makehaven_tasks_task_form_validate(array &$form, \Drupal\Core\Form\For
   if ($type === Opportunity::TYPE_SHIFT && empty($when)) {
     $form_state->setErrorByName('field_task_when', t('A dated shift needs a start date and time.'));
   }
+  $stage = $form_state->getValue(['field_task_stage', 0, 'value']);
+  $original_stage = '';
+  if (($form_object = $form_state->getFormObject()) && method_exists($form_object, 'getEntity')) {
+    $original_stage = (string) $form_object->getEntity()->get('field_task_stage')->value;
+  }
+  // Only when it starts gathering here: an opportunity already gathering
+  // keeps the decide-by it was given.
+  if ($type === Opportunity::TYPE_SHIFT && $stage === Opportunity::STAGE_GATHERING && $original_stage !== Opportunity::STAGE_GATHERING
+    && $when instanceof \Drupal\Core\Datetime\DrupalDateTime && $when->getTimestamp() < \Drupal::time()->getCurrentTime() + Opportunity::MIN_LEAD) {
+    $form_state->setErrorByName('field_task_when', t('A shift gathering interest must start at least two days from now, so people can sign up and staff can approve it. Post it as approved instead if the crew is already known.'));
+  }
   $min = $form_state->getValue(['field_task_min_volunteers', 0, 'value']);
   $max = $form_state->getValue(['field_task_max_volunteers', 0, 'value']);
   if ($min !== NULL && $min !== '' && $max !== NULL && $max !== '' && (int) $max < (int) $min) {
