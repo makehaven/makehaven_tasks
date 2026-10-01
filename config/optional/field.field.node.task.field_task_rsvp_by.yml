@@ -10,8 +10,8 @@ id: node.task.field_task_rsvp_by
 field_name: field_task_rsvp_by
 entity_type: node
 bundle: task
-label: RSVP or apply by
-description: The organizer's deadline. Sign-ups close the day before.
+label: 'RSVP or apply by'
+description: "The organizer's deadline. Sign-ups close the day before."
 required: false
 translatable: false
 default_value: {  }

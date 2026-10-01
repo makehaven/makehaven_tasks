@@ -9,13 +9,13 @@ field_name: field_task_fee
 entity_type: node
 bundle: task
 label: Fee
-description: Table or vendor fee, if any.
+description: 'Table or vendor fee, if any.'
 required: false
 translatable: false
 default_value: {  }
 default_value_callback: ''
 settings:
-  min: 0
+  min: 0.0
   max: null
   prefix: $
   suffix: ''

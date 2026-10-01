@@ -11,7 +11,7 @@ use Drupal\makehaven_tasks\Volunteer\Preferences;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
- * "How would you like to help?" (/volunteer/preferences).
+ * "How would you like to help?" (/tasks/preferences).
  *
  * Replaces the old outreach volunteer webform. The answers mark matching
  * opportunities "For you" on the board, optionally email the person when a

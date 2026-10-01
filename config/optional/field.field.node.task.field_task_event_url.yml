@@ -10,8 +10,8 @@ id: node.task.field_task_event_url
 field_name: field_task_event_url
 entity_type: node
 bundle: task
-label: Event link
-description: The event page or RSVP form.
+label: 'Event link'
+description: 'The event page or RSVP form.'
 required: false
 translatable: false
 default_value: {  }

@@ -138,7 +138,7 @@ final class VolunteerDecisionForm extends FormBase {
 
     $headline = $short > 0
       ? t('@n more needed', ['@n' => $short])
-      : ($gathering ? t('Enough people') : t("It's on"));
+      : ($gathering ? t('Enough people') : t('Every slot covered'));
     $html = '<div class="vol-summary"><span class="vol-count ' . ($short > 0 ? 'vol-count--short' : 'vol-count--ok') . '">' . $headline . '</span>';
     $bits = [];
     if (!Opportunity::hasSlots($node) && ($when = Opportunity::whenLabel($node)) !== '') {

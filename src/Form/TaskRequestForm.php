@@ -68,6 +68,15 @@ final class TaskRequestForm extends FormBase {
   }
 
   /**
+   * Page title for /tasks/request.
+   */
+  public static function title(): string {
+    return \Drupal::currentUser()->hasPermission('makehaven_tasks.create_task')
+      ? (string) t('Post to the volunteer board')
+      : (string) t('Suggest something volunteers could do');
+  }
+
+  /**
    * Route access callback for /tasks/{node}/edit.
    */
   public static function editAccessRoute(NodeInterface $node, AccountInterface $account) {
@@ -117,7 +126,7 @@ final class TaskRequestForm extends FormBase {
     else {
       $form['intro'] = [
         '#markup' => '<p class="vol-help">' . $this->t('Editing "@title" (@stage).', ['@title' => $node->label(), '@stage' => $this->stageLabel(Opportunity::stage($node))])
-          . ($account->hasPermission('administer nodes') ? ' <a href="' . $node->toUrl('edit-form', ['query' => ['advanced' => 1]])->toString() . '">' . $this->t('Advanced editor') . '</a>' : '') . '</p>',
+        . ($account->hasPermission('administer nodes') ? ' <a href="' . $node->toUrl('edit-form', ['query' => ['advanced' => 1]])->toString() . '">' . $this->t('Advanced editor') . '</a>' : '') . '</p>',
       ];
     }
 
@@ -139,11 +148,13 @@ final class TaskRequestForm extends FormBase {
       '#default_value' => isset($kinds[$kind]) ? $kind : Opportunity::TYPE_TASK,
       '#required' => TRUE,
     ];
-    $dated = ['visible' => [
+    $dated = [
+      'visible' => [
       [':input[name="kind"]' => ['value' => Opportunity::TYPE_SHIFT]],
-      'or',
+        'or',
       [':input[name="kind"]' => ['value' => Opportunity::TYPE_TABLING]],
-    ]];
+      ],
+    ];
     $tabling_only = ['visible' => [':input[name="kind"]' => ['value' => Opportunity::TYPE_TABLING]]];
     $repeating_only = ['visible' => [':input[name="kind"]' => ['value' => self::KIND_REPEATING]]];
 
@@ -520,7 +531,7 @@ final class TaskRequestForm extends FormBase {
         'field_task_status' => 'open',
         'field_task_audience' => 'open_member',
       ]);
-      if ($fields) {
+      if ($fields && $node->hasField('field_task_stage')) {
         // Approved undated tasks keep the stage empty, which reads as approved
         // and keeps the long-standing claim flow; dated ones say so, which
         // lets the board post their recruitment call.
@@ -529,46 +540,52 @@ final class TaskRequestForm extends FormBase {
       $node->setPublished($stage !== Opportunity::STAGE_PROPOSED);
     }
 
+    // Sites (and tests) without one of these fields simply skip it.
+    $set = function (string $field, $value) use ($node): void {
+      if ($node->hasField($field)) {
+        $node->set($field, $value);
+      }
+    };
     $node->setTitle(trim((string) $form_state->getValue('title')));
-    $node->set('body', ['value' => trim((string) $form_state->getValue('details')), 'format' => 'plain_text']);
-    $node->set('field_task_equipment', ($equipment = $form_state->getValue('equipment')) ? ['target_id' => (int) $equipment] : NULL);
+    $set('body', ['value' => trim((string) $form_state->getValue('details')), 'format' => 'plain_text']);
+    $set('field_task_equipment', ($equipment = $form_state->getValue('equipment')) ? ['target_id' => (int) $equipment] : NULL);
 
     if ($kind === self::KIND_REPEATING && $elevated) {
-      $node->set('field_task_frequency', (string) $form_state->getValue('frequency'));
+      $set('field_task_frequency', (string) $form_state->getValue('frequency'));
       $first = (string) $form_state->getValue('first_due');
-      $node->set('field_task_next_due', $first !== '' ? $first . 'T12:00:00' : NULL);
+      $set('field_task_next_due', $first !== '' ? $first . 'T12:00:00' : NULL);
     }
-    elseif (!$editing || $node->get('field_task_frequency')->isEmpty() || in_array($node->get('field_task_frequency')->value, ['weekly', 'monthly', 'quarterly', 'yearly', 'biennial'], TRUE)) {
-      $node->set('field_task_frequency', 'once');
+    elseif ($node->hasField('field_task_frequency') && (!$editing || $node->get('field_task_frequency')->isEmpty() || in_array($node->get('field_task_frequency')->value, ['weekly', 'monthly', 'quarterly', 'yearly', 'biennial'], TRUE))) {
+      $set('field_task_frequency', 'once');
     }
 
     if ($fields) {
-      $node->set('field_task_type', $dated ? $kind : Opportunity::TYPE_TASK);
-      $node->set('field_task_min_volunteers', max(1, (int) $form_state->getValue('min')));
+      $set('field_task_type', $dated ? $kind : Opportunity::TYPE_TASK);
+      $set('field_task_min_volunteers', max(1, (int) $form_state->getValue('min')));
       $max = (string) $form_state->getValue('max');
-      $node->set('field_task_max_volunteers', $max !== '' ? (int) $max : NULL);
-      $node->set('field_task_interest', ($tid = $form_state->getValue('interest')) ? [['target_id' => (int) $tid]] : []);
+      $set('field_task_max_volunteers', $max !== '' ? (int) $max : NULL);
+      $set('field_task_interest', ($tid = $form_state->getValue('interest')) ? [['target_id' => (int) $tid]] : []);
       if ($dated) {
-        $node->set('field_task_when', array_map(fn($s) => [
+        $set('field_task_when', array_map(fn($s) => [
           'value' => Opportunity::timestampToStorage($s['start']),
           'end_value' => Opportunity::timestampToStorage($s['end']),
         ], $this->slotsFromInput($form_state)));
       }
       else {
-        $node->set('field_task_when', []);
+        $set('field_task_when', []);
       }
       if ($node->hasField('field_task_event_url')) {
         $tabling = $kind === Opportunity::TYPE_TABLING;
         $url = $tabling ? trim((string) $form_state->getValue('event_url')) : '';
-        $node->set('field_task_event_url', $url !== '' ? ['uri' => $url] : NULL);
-        $node->set('field_task_rsvp_by', $tabling && $form_state->getValue('rsvp_by') ? (string) $form_state->getValue('rsvp_by') : NULL);
-        $node->set('field_task_bring', $tabling ? (trim((string) $form_state->getValue('bring')) ?: NULL) : NULL);
-        $node->set('field_task_selling_ok', $tabling ? (int) (bool) $form_state->getValue('selling_ok') : NULL);
+        $set('field_task_event_url', $url !== '' ? ['uri' => $url] : NULL);
+        $set('field_task_rsvp_by', $tabling && $form_state->getValue('rsvp_by') ? (string) $form_state->getValue('rsvp_by') : NULL);
+        $set('field_task_bring', $tabling ? (trim((string) $form_state->getValue('bring')) ?: NULL) : NULL);
+        $set('field_task_selling_ok', $tabling ? (int) (bool) $form_state->getValue('selling_ok') : NULL);
         if ($elevated) {
-          $node->set('field_task_organizer', $tabling ? (trim((string) $form_state->getValue('organizer')) ?: NULL) : NULL);
-          $node->set('field_task_org_status', $tabling ? ($form_state->getValue('org_status') ?: NULL) : NULL);
+          $set('field_task_organizer', $tabling ? (trim((string) $form_state->getValue('organizer')) ?: NULL) : NULL);
+          $set('field_task_org_status', $tabling ? ($form_state->getValue('org_status') ?: NULL) : NULL);
           $fee = (string) $form_state->getValue('fee');
-          $node->set('field_task_fee', $tabling && $fee !== '' ? $fee : NULL);
+          $set('field_task_fee', $tabling && $fee !== '' ? $fee : NULL);
         }
       }
       // Tabling: sign-ups close the day before the organizer's deadline when
@@ -579,24 +596,24 @@ final class TaskRequestForm extends FormBase {
         $days = (int) ($this->config('makehaven_tasks.settings')->get('gathering_days') ?: 8);
         $default = Opportunity::defaultDecideBy($now, $this->slotsFromInput($form_state)[0]['start'] ?? NULL, $days);
         if ($deadline < $default) {
-          $node->set('field_task_decide_by', Opportunity::timestampToStorage(max($deadline, $now + Opportunity::MIN_WINDOW)));
+          $set('field_task_decide_by', Opportunity::timestampToStorage(max($deadline, $now + Opportunity::MIN_WINDOW)));
         }
       }
     }
 
     if ($elevated) {
-      $node->set('field_task_audience', (string) ($form_state->getValue('audience') ?: 'open_member'));
-      $node->set('field_task_required_badge', $form_state->getValue('audience') === 'badge_holders' && $form_state->getValue('required_badge') ? ['target_id' => (int) $form_state->getValue('required_badge')] : NULL);
-      $node->set('field_task_priority', $form_state->getValue('priority') ?: NULL);
+      $set('field_task_audience', (string) ($form_state->getValue('audience') ?: 'open_member'));
+      $set('field_task_required_badge', $form_state->getValue('audience') === 'badge_holders' && $form_state->getValue('required_badge') ? ['target_id' => (int) $form_state->getValue('required_badge')] : NULL);
+      $set('field_task_priority', $form_state->getValue('priority') ?: NULL);
       $hours = (string) $form_state->getValue('estimated_hours');
-      $node->set('field_task_estimated_hours', $hours !== '' ? $hours : NULL);
+      $set('field_task_estimated_hours', $hours !== '' ? $hours : NULL);
       if ($node->hasField('field_task_instructions')) {
         $text = trim((string) $form_state->getValue('instructions'));
-        $node->set('field_task_instructions', $text !== '' ? ['value' => $text, 'format' => 'plain_text'] : NULL);
+        $set('field_task_instructions', $text !== '' ? ['value' => $text, 'format' => 'plain_text'] : NULL);
       }
       if ($node->hasField('field_task_video_url')) {
         $video = trim((string) $form_state->getValue('video_url'));
-        $node->set('field_task_video_url', $video !== '' ? ['uri' => $video] : NULL);
+        $set('field_task_video_url', $video !== '' ? ['uri' => $video] : NULL);
       }
     }
 

@@ -8,8 +8,8 @@ id: node.task.field_task_selling_ok
 field_name: field_task_selling_ok
 entity_type: node
 bundle: task
-label: Makers may sell work
-description: Volunteers may sell their own work at our table.
+label: 'Makers may sell work'
+description: 'Volunteers may sell their own work at our table.'
 required: false
 translatable: false
 default_value: {  }

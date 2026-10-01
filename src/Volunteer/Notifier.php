@@ -143,7 +143,7 @@ final class Notifier {
         sprintf('Hi %s,', $user->getDisplayName()),
         sprintf('Thank you for helping with "%s". It makes a real difference.', $node->label()),
         $perks ? 'You have earned: ' . implode(', ', $perks) . '. Staff have been told and will get it to you.' : '',
-        'Didn\'t make it after all? No problem; just reply and let us know.',
+        'Didn\'t make it after all? No problem; please let a staff member know so the thank-yous stay right.',
         'More ways to help: ' . $this->boardUrl(),
       ])));
       $sent++;

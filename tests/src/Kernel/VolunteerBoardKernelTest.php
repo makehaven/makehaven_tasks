@@ -61,6 +61,7 @@ class VolunteerBoardKernelTest extends KernelTestBase {
     parent::setUp();
     $this->installSchema('system', ['sequences']);
     $this->installSchema('node', ['node_access']);
+    $this->installSchema('user', ['users_data']);
     $this->installSchema('flag', ['flag_counts']);
     $this->installEntitySchema('user');
     $this->installEntitySchema('node');
@@ -96,6 +97,7 @@ class VolunteerBoardKernelTest extends KernelTestBase {
       $this->assertNotNull(FieldConfig::loadByName('node', 'task', 'field_task_' . $field), "field_task_$field exists.");
     }
     $this->assertTrue(\Drupal::database()->schema()->tableExists('makehaven_task_signup'));
+    $this->installSchema('makehaven_tasks', ['makehaven_volunteer_perk']);
     Flag::create([
       'id' => 'task_completed', 'label' => 'Task Completed', 'entity_type' => 'node',
       'bundles' => ['task'], 'flag_type' => 'entity:node', 'link_type' => 'reload',
@@ -388,6 +390,184 @@ class VolunteerBoardKernelTest extends KernelTestBase {
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  // ── Phase 2: time slots, tabling, thank-yous, preferences ──────────────────
+
+  /**
+   * A dated opportunity with several slots, as the Post form makes it.
+   */
+  protected function createSlotted(array $overrides = [], int $days_ahead = 20, array $hours = [[10, 13], [13, 16]]): NodeInterface {
+    $tz = Opportunity::timezone();
+    $day = (new \DateTime('today', $tz))->modify("+$days_ahead days");
+    $when = [];
+    foreach ($hours as [$from, $to]) {
+      $when[] = [
+        'value' => Opportunity::timestampToStorage((clone $day)->setTime($from, 0)->getTimestamp()),
+        'end_value' => Opportunity::timestampToStorage((clone $day)->setTime($to, 0)->getTimestamp()),
+      ];
+    }
+    return $this->createTask($overrides + [
+      'field_task_stage' => 'gathering',
+      'field_task_type' => 'shift',
+      'field_task_min_volunteers' => 2,
+      'field_task_max_volunteers' => 2,
+      'field_task_when' => $when,
+    ]);
+  }
+
+  /**
+   * Headcount is per slot: an opportunity is short until every slot has its
+   * minimum, and a full slot closes without closing the others.
+   */
+  public function testSlotsCountPerSlot(): void {
+    $shift = $this->createSlotted();
+    [$morning, $afternoon] = array_keys(Opportunity::slots($shift));
+    $this->assertStringContainsString(', ', Opportunity::whenLabel($shift), 'Both slots in the label.');
+
+    $this->signups()->setSlots($shift, (int) $this->alice->id(), [$morning, $afternoon], 'both', 'interest');
+    $this->signups()->setSlots($shift, (int) $this->bob->id(), [$morning], '', 'interest');
+    $this->assertSame([$morning => 2, $afternoon => 1], $this->signups()->slotCounts($shift));
+    $this->assertSame(2, $this->signups()->count($shift), 'People, not rows.');
+    $this->assertSame(1, $this->signups()->stillNeeded($shift));
+    $this->assertFalse($this->signups()->enough($shift));
+    $this->assertTrue($this->signups()->slotFull($shift, $morning));
+    $this->assertFalse($this->signups()->full($shift), 'The afternoon still has room.');
+    $this->assertNull(VolunteerInterestForm::closedReason($shift, (int) $this->carol->id(), $this->signups()));
+
+    $this->signups()->setSlots($shift, (int) $this->carol->id(), [$afternoon], '', 'interest');
+    $this->assertTrue($this->signups()->enough($shift));
+
+    // Dropping a slot keeps the other.
+    $this->signups()->setSlots($shift, (int) $this->alice->id(), [$afternoon], 'both', 'interest');
+    $this->assertSame([$afternoon], $this->signups()->userSlots($shift, (int) $this->alice->id()));
+  }
+
+  /**
+   * Editing a slot's time in place moves its sign-ups with it.
+   */
+  public function testMovingASlotKeepsItsSignups(): void {
+    $shift = $this->createSlotted();
+    [$morning] = array_keys(Opportunity::slots($shift));
+    $this->signups()->setSlots($shift, (int) $this->alice->id(), [$morning], '', 'interest');
+
+    $when = $shift->get('field_task_when')->getValue();
+    $when[0]['value'] = Opportunity::timestampToStorage($morning + 3600);
+    $shift->set('field_task_when', $when)->save();
+
+    $this->assertSame([$morning + 3600], $this->signups()->userSlots(Node::load($shift->id()), (int) $this->alice->id()));
+  }
+
+  /**
+   * Approved shifts: one roster reminder two days out, one thank-you after.
+   */
+  public function testRosterReminderAndThankYouOnce(): void {
+    $shift = $this->createSlotted(['field_task_stage' => 'approved']);
+    $slots = Opportunity::slots($shift);
+    $this->signups()->setSlots($shift, (int) $this->alice->id(), array_keys($slots), '', 'confirmed');
+    $start = Opportunity::start($shift);
+    $end = Opportunity::end($shift);
+    $this->resetOutbound();
+
+    $this->assertSame([], $this->decider()->tick($start - 3 * 86400), 'Too early for the reminder.');
+    $this->assertCount(1, $this->decider()->tick($start - 86400));
+    $this->assertCount(1, $this->getMails(['key' => 'volunteer_reminder']));
+    $this->assertStringContainsString('Your time:', $this->getMails(['key' => 'volunteer_reminder'])[0]['body']);
+    $this->assertSame([], $this->decider()->tick($start - 3600), 'Reminded once.');
+
+    $this->decider()->tick($end + 3600);
+    $thanks = $this->getMails(['key' => 'volunteer_thanks']);
+    $this->assertCount(1, $thanks);
+    $this->assertStringContainsString('T-shirt', $thanks[0]['body'], 'The thank-you says what they earned.');
+    $this->decider()->tick($end + 7200);
+    $this->assertCount(1, $this->getMails(['key' => 'volunteer_thanks']), 'Thanked once.');
+  }
+
+  /**
+   * Thank-yous: t-shirt on the first day, lunch for 3+ hours, hoodie after 5
+   * days; recording one clears it; a no-show day stops counting.
+   */
+  public function testThankYousEarnedAndRecorded(): void {
+    /** @var \Drupal\makehaven_tasks\Volunteer\Perks $perks */
+    $perks = \Drupal::service('makehaven_tasks.volunteer_perks');
+    $uid = (int) $this->alice->id();
+    $owed = fn() => array_map(fn($r) => $r['perk'] . ($r['ref'] ? ':' . $r['ref'] : ''), array_filter($perks->owed(), fn($r) => $r['uid'] === $uid));
+
+    // Day 1 (past): two 3-hour slots; day 2: one 2-hour slot.
+    $day1 = $this->createSlotted(['field_task_stage' => 'approved'], -10);
+    $this->signups()->setSlots($day1, $uid, array_keys(Opportunity::slots($day1)), '', 'confirmed');
+    $day2 = $this->createSlotted(['field_task_stage' => 'approved'], -9, [[10, 12]]);
+    $this->signups()->setSlots($day2, $uid, array_keys(Opportunity::slots($day2)), '', 'confirmed');
+    // Interest only (never approved) does not count.
+    $pending = $this->createSlotted([], -8);
+    $this->signups()->setSlots($pending, $uid, array_keys(Opportunity::slots($pending)), '', 'interest');
+
+    $d1 = Opportunity::day(Opportunity::start($day1));
+    $this->assertEqualsCanonicalizing(['tshirt', "lunch:$d1"], array_values($owed()), 'Lunch only for the 6-hour day.');
+    $this->assertSame(2, $perks->progress($uid)['days']);
+
+    $perks->record($uid, 'tshirt', '', (int) $day1->id(), $this->staff, 'given', 'M');
+    $this->assertEqualsCanonicalizing(["lunch:$d1"], array_values($owed()));
+
+    for ($i = 3; $i <= 5; $i++) {
+      $more = $this->createSlotted(['field_task_stage' => 'approved'], -8 + $i, [[18, 20]]);
+      $this->signups()->setSlots($more, $uid, array_keys(Opportunity::slots($more)), '', 'confirmed');
+    }
+    $this->assertContains('hoodie', $owed(), 'Five days earns a hoodie.');
+
+    $perks->noShow($uid, Opportunity::day(Opportunity::start($day2)), (int) $day2->id(), $this->staff);
+    $this->assertNotContains('hoodie', $owed(), 'A no-show day stops counting.');
+    $this->assertSame(4, $perks->progress($uid)['days']);
+  }
+
+  /**
+   * Tabling posted from the one form: slots, organizer details, and a summary
+   * line in the outreach channel as well as the recruiting post.
+   */
+  public function testTablingFromThePostForm(): void {
+    \Drupal::currentUser()->setAccount($this->facilitator);
+    $this->config('makehaven_tasks.settings')->set('outreach_slack_channel', '#outreach')->save();
+    $day = (new \DateTime('+12 days', Opportunity::timezone()))->format('Y-m-d');
+    $this->resetOutbound();
+    $node = $this->submitRequest([
+      'kind' => 'tabling',
+      'title' => 'Fair table',
+      'details' => 'Talk to people.',
+      'post_as' => 'gathering',
+      'when' => [['date' => $day, 'start' => '10:00', 'end' => '13:00'], ['date' => $day, 'start' => '13:00', 'end' => '16:00'], 'add' => 'x'],
+      'min' => 2,
+      'event_url' => 'https://example.org/fair',
+      'organizer' => 'Pat, 555-1212',
+      'org_status' => 'need_rsvp',
+      'selling_ok' => 1,
+    ]);
+    $this->assertSame('tabling', $node->get('field_task_type')->value);
+    $this->assertCount(2, Opportunity::slots($node));
+    $this->assertTrue(Opportunity::isShift($node), 'Tabling uses the roster.');
+    $this->assertSame('Pat, 555-1212', $node->get('field_task_organizer')->value);
+    $this->assertCount(1, $this->slackPosts('#volunteers', 'Fair table'));
+    $this->assertCount(1, $this->slackPosts('#outreach', 'Fair table'));
+  }
+
+  /**
+   * Preferences: only people who opted in are emailed about a match, once.
+   */
+  public function testMatchingEmailsGoOnlyToOptIns(): void {
+    /** @var \Drupal\makehaven_tasks\Volunteer\Preferences $prefs */
+    $prefs = \Drupal::service('makehaven_tasks.volunteer_preferences');
+    $prefs->set((int) $this->alice->id(), ['ways' => ['tabling'], 'notify' => TRUE]);
+    $prefs->set((int) $this->bob->id(), ['ways' => ['tabling'], 'notify' => FALSE]);
+    $prefs->set((int) $this->carol->id(), ['ways' => ['fixing'], 'notify' => TRUE]);
+    $this->resetOutbound();
+
+    $table = $this->createSlotted(['field_task_type' => 'tabling', 'title' => 'Library fair']);
+    $mails = $this->getMails(['key' => 'volunteer_match']);
+    $this->assertCount(1, $mails);
+    $this->assertSame($this->alice->getEmail(), $mails[0]['to']);
+    $this->assertTrue(\Drupal::service('makehaven_tasks.volunteer_board')->isForYou($table, $this->bob), 'Still marked For you without emails.');
+
+    $table->setTitle('Library fair (moved)')->save();
+    $this->assertCount(1, $this->getMails(['key' => 'volunteer_match']), 'Once per opportunity.');
+  }
 
   protected function submitRequest(array $values): NodeInterface {
     $form = TaskRequestForm::create($this->container);

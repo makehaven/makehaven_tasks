@@ -8,8 +8,8 @@ id: node.task.field_task_bring
 field_name: field_task_bring
 entity_type: node
 bundle: task
-label: What to bring, activity and code to mention
-description: e.g. "Bring table, chairs and tent. Button making. Mention code FLIGHTS26."
+label: 'What to bring, activity and code to mention'
+description: 'e.g. "Bring table, chairs and tent. Button making. Mention code FLIGHTS26."'
 required: false
 translatable: false
 default_value: {  }

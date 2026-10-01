@@ -367,7 +367,7 @@ final class Decider {
         if (!$dry_run) {
           $earned = [];
           $users = array_keys($this->signups->users($node));
-          foreach ($this->perks->owed() as $row) {
+          foreach ($this->perks->owed(NULL, $now) as $row) {
             if (in_array($row['uid'], $users, TRUE)) {
               $earned[$row['uid']][] = Perks::label($row['perk']);
             }

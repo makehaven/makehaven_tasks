@@ -522,7 +522,7 @@ function makehaven_tasks_views_query_alter(ViewExecutable $view, $query) {
   // display adds gathering ones itself. Empty stage = approved.
   if (in_array($view->current_display, ['page_tasks_interactive', 'page_tasks_display'], TRUE) && Opportunity::fieldsInstalled()) {
     $query->addWhereExpression(0, "node_field_data.nid NOT IN (SELECT mh_st.entity_id FROM {node__field_task_stage} mh_st WHERE mh_st.deleted = 0 AND mh_st.field_task_stage_value <> 'approved')");
-    $query->addWhereExpression(0, "node_field_data.nid NOT IN (SELECT mh_ty.entity_id FROM {node__field_task_type} mh_ty WHERE mh_ty.deleted = 0 AND mh_ty.field_task_type_value = 'shift')");
+    $query->addWhereExpression(0, "node_field_data.nid NOT IN (SELECT mh_ty.entity_id FROM {node__field_task_type} mh_ty WHERE mh_ty.deleted = 0 AND mh_ty.field_task_type_value IN ('shift', 'tabling'))");
   }
   if ($view->current_display === 'page_tasks_interactive' && Opportunity::fieldsInstalled()) {
     _makehaven_tasks_apply_board_filters($query, BoardBuilder::filters(\Drupal::request()));

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\makehaven_tasks\Drush\Commands;
 
+use Drupal\makehaven_tasks\Volunteer\Preferences;
 use Drupal\makehaven_tasks\Volunteer\Decider;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
@@ -59,7 +60,6 @@ class VolunteerCommands extends DrushCommands {
     return self::EXIT_SUCCESS;
   }
 
-
   /**
    * Copy the old outreach volunteer webform's answers into How I like to help.
    *
@@ -79,7 +79,7 @@ class VolunteerCommands extends DrushCommands {
     }
     /** @var \Drupal\makehaven_tasks\Volunteer\Preferences $prefs */
     $prefs = \Drupal::service('makehaven_tasks.volunteer_preferences');
-    $map = \Drupal\makehaven_tasks\Volunteer\Preferences::legacyWayMap();
+    $map = Preferences::legacyWayMap();
     $submissions = $etm->getStorage('webform_submission')->loadByProperties(['webform_id' => 'sign_up_to_be_a_makehaven_outrea']);
     foreach ($submissions as $submission) {
       $data = $submission->getData();

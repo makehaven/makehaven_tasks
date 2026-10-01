@@ -88,7 +88,7 @@ final class Perks {
    * @return array<int, array<string, array{hours:float, nids:int[]}>>
    *   uid => [Y-m-d => hours and opportunities], oldest day first.
    */
-  public function days(?int $uid = NULL): array {
+  public function days(?int $uid = NULL, ?int $now = NULL): array {
     $query = $this->database->select(SignupStore::TABLE, 's')
       ->fields('s', ['uid', 'nid', 'slot'])
       ->condition('kind', SignupStore::KIND_CONFIRMED);
@@ -100,7 +100,7 @@ final class Perks {
       return [];
     }
     $nodes = $this->entityTypeManager->getStorage('node')->loadMultiple(array_unique(array_map(fn($r) => (int) $r->nid, $rows)));
-    $now = $this->time->getCurrentTime();
+    $now ??= $this->time->getCurrentTime();
     $no_shows = $this->noShows($uid);
     $out = [];
     foreach ($rows as $row) {
@@ -172,14 +172,19 @@ final class Perks {
   /**
    * Thank-yous earned and not yet handed out (or skipped).
    *
+   * @param int|null $uid
+   *   One person, or NULL for everyone.
+   * @param int|null $now
+   *   Count slots ended by then (default: now).
+   *
    * @return array<int, array{uid:int, perk:string, ref:string, nid:int, day:string, why:string}>
    *   Oldest first.
    */
-  public function owed(?int $uid = NULL): array {
+  public function owed(?int $uid = NULL, ?int $now = NULL): array {
     $p = $this->policy();
     $recorded = $this->recorded($uid);
     $out = [];
-    foreach ($this->days($uid) as $u => $days) {
+    foreach ($this->days($uid, $now) as $u => $days) {
       $first = array_key_first($days);
       if (!isset($recorded["$u:" . self::TSHIRT . ':'])) {
         $out[] = ['uid' => $u, 'perk' => self::TSHIRT, 'ref' => '', 'nid' => $days[$first]['nids'][0], 'day' => $first, 'why' => (string) t('First day volunteering')];

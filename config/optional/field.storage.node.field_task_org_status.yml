@@ -10,18 +10,24 @@ entity_type: node
 type: list_string
 settings:
   allowed_values:
-    - value: considering
+    -
+      value: considering
       label: Considering
-    - value: need_rsvp
-      label: Need to RSVP or apply
-    - value: applied
-      label: Applied, waiting to hear
-    - value: accepted
-      label: Accepted by the organizer
-    - value: skipped
+    -
+      value: need_rsvp
+      label: 'Need to RSVP or apply'
+    -
+      value: applied
+      label: 'Applied, waiting to hear'
+    -
+      value: accepted
+      label: 'Accepted by the organizer'
+    -
+      value: skipped
       label: Skipped
-    - value: missed
-      label: Missed the deadline
+    -
+      value: missed
+      label: 'Missed the deadline'
   allowed_values_function: ''
 module: options
 locked: false

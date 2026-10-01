@@ -38,7 +38,7 @@ final class VolunteerPerksController extends ControllerBase {
     $policy = $this->perks->policy();
     $build['policy'] = [
       '#markup' => '<p class="vol-help">' . htmlspecialchars($this->perks->policyText(), ENT_QUOTES) . ' '
-        . $this->t('Counted from confirmed time slots on approved shifts and tabling once they have ended. "Given" on a t-shirt or hoodie also takes one off the store count. Amounts are in <a href=":settings">Tasks settings</a>.', [':settings' => Url::fromRoute('makehaven_tasks.settings_form')->toString()]) . '</p>',
+      . $this->t('Counted from confirmed time slots on approved shifts and tabling once they have ended. "Given" on a t-shirt or hoodie also takes one off the store count. Amounts are in <a href=":settings">Tasks settings</a>.', [':settings' => Url::fromRoute('makehaven_tasks.settings_form')->toString()]) . '</p>',
     ];
 
     $owed = $this->perks->owed();

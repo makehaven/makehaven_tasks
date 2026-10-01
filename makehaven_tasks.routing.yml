@@ -42,7 +42,7 @@ makehaven_tasks.request:
   path: '/tasks/request'
   defaults:
     _form: '\Drupal\makehaven_tasks\Form\TaskRequestForm'
-    _title: 'Suggest a volunteer opportunity'
+    _title_callback: '\Drupal\makehaven_tasks\Form\TaskRequestForm::title'
   requirements:
     _user_is_logged_in: 'TRUE'
 
@@ -139,7 +139,7 @@ makehaven_tasks.interest:
   path: '/tasks/{node}/interest'
   defaults:
     _form: '\Drupal\makehaven_tasks\Form\VolunteerInterestForm'
-    _title: "I'm interested"
+    _title: "I'm in"
   requirements:
     _user_is_logged_in: 'TRUE'
     _entity_access: 'node.view'
@@ -176,7 +176,7 @@ makehaven_tasks.edit:
         type: entity:node
 
 makehaven_tasks.preferences:
-  path: '/volunteer/preferences'
+  path: '/tasks/preferences'
   defaults:
     _form: '\Drupal\makehaven_tasks\Form\VolunteerPreferencesForm'
     _title: 'How would you like to help?'
