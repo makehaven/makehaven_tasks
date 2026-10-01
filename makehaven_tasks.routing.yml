@@ -161,3 +161,40 @@ makehaven_tasks.decide:
     parameters:
       node:
         type: entity:node
+
+makehaven_tasks.edit:
+  path: '/tasks/{node}/edit'
+  defaults:
+    _form: '\Drupal\makehaven_tasks\Form\TaskRequestForm'
+    _title: 'Edit'
+  requirements:
+    _custom_access: '\Drupal\makehaven_tasks\Form\TaskRequestForm::editAccessRoute'
+    node: '\d+'
+  options:
+    parameters:
+      node:
+        type: entity:node
+
+makehaven_tasks.preferences:
+  path: '/volunteer/preferences'
+  defaults:
+    _form: '\Drupal\makehaven_tasks\Form\VolunteerPreferencesForm'
+    _title: 'How would you like to help?'
+  requirements:
+    _user_is_logged_in: 'TRUE'
+
+makehaven_tasks.perks:
+  path: '/tasks/thank-yous'
+  defaults:
+    _controller: '\Drupal\makehaven_tasks\Controller\VolunteerPerksController::page'
+    _title: 'Volunteer thank-yous'
+  requirements:
+    _permission: 'makehaven_tasks.create_task'
+
+makehaven_tasks.pool:
+  path: '/tasks/volunteers'
+  defaults:
+    _controller: '\Drupal\makehaven_tasks\Controller\VolunteerPoolController::page'
+    _title: 'Volunteer pool'
+  requirements:
+    _permission: 'makehaven_tasks.create_task'

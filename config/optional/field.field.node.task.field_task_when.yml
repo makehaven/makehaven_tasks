@@ -11,7 +11,7 @@ field_name: field_task_when
 entity_type: node
 bundle: task
 label: When
-description: 'Start and end, for a dated shift.'
+description: 'Start and end of each time slot, for a dated shift or tabling. Add a slot per shift (setup, morning, afternoon).'
 required: false
 translatable: false
 default_value: {  }

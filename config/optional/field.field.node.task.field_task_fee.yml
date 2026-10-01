@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_task_fee
+    - node.type.task
+id: node.task.field_task_fee
+field_name: field_task_fee
+entity_type: node
+bundle: task
+label: Fee
+description: Table or vendor fee, if any.
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  min: 0
+  max: null
+  prefix: $
+  suffix: ''
+field_type: decimal

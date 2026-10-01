@@ -35,6 +35,7 @@ final class Opportunity {
 
   public const TYPE_TASK = 'task';
   public const TYPE_SHIFT = 'shift';
+  public const TYPE_TABLING = 'tabling';
 
   /**
    * The stage; empty reads as approved.
@@ -71,14 +72,80 @@ final class Opportunity {
   }
 
   /**
-   * Whether it is a dated shift.
+   * Whether it is dated (a shift or tabling): it has a roster, not a lead.
    */
   public static function isShift(NodeInterface $node): bool {
-    return self::type($node) === self::TYPE_SHIFT;
+    return in_array(self::type($node), [self::TYPE_SHIFT, self::TYPE_TABLING], TRUE);
   }
 
   /**
-   * Minimum headcount: the field, else 1 for a task and 2 for a shift.
+   * Whether it is tabling at an outside event.
+   */
+  public static function isTabling(NodeInterface $node): bool {
+    return self::type($node) === self::TYPE_TABLING;
+  }
+
+  /**
+   * The time slots, earliest first.
+   *
+   * One item of field_task_when per slot (setup, morning, afternoon). The
+   * headcount applies to each slot.
+   *
+   * @return array<int, array{start:int, end:int}>
+   *   Keyed by start time.
+   */
+  public static function slots(NodeInterface $node): array {
+    if (!$node->hasField('field_task_when') || $node->get('field_task_when')->isEmpty()) {
+      return [];
+    }
+    $out = [];
+    foreach ($node->get('field_task_when') as $item) {
+      $start = self::storageToTimestamp((string) $item->value);
+      if (!$start) {
+        continue;
+      }
+      $end = $item->end_value ? self::storageToTimestamp((string) $item->end_value) : NULL;
+      $out[$start] = ['start' => $start, 'end' => ($end && $end > $start) ? $end : $start + 3 * 3600];
+    }
+    ksort($out);
+    return $out;
+  }
+
+  /**
+   * Whether it has more than one time slot.
+   */
+  public static function hasSlots(NodeInterface $node): bool {
+    return count(self::slots($node)) > 1;
+  }
+
+  /**
+   * "9:45am–12:00pm" (same day) or "Sun Oct 11, 9:45am–12:00pm".
+   */
+  public static function slotLabel(int $start, int $end, bool $with_day = FALSE): string {
+    $tz = self::timezone();
+    $s = (new \DateTime('@' . $start))->setTimezone($tz);
+    $e = (new \DateTime('@' . $end))->setTimezone($tz);
+    $out = ($with_day ? $s->format('D M j, ') : '') . $s->format('g:ia');
+    $out .= $e->format('Y-m-d') === $s->format('Y-m-d') ? '–' . $e->format('g:ia') : ' – ' . $e->format('D M j, g:ia');
+    return $out;
+  }
+
+  /**
+   * The local calendar day (Y-m-d) a timestamp falls on.
+   */
+  public static function day(int $ts): string {
+    return (new \DateTime('@' . $ts))->setTimezone(self::timezone())->format('Y-m-d');
+  }
+
+  /**
+   * The site timezone.
+   */
+  public static function timezone(): \DateTimeZone {
+    return new \DateTimeZone(\Drupal::config('system.date')->get('timezone.default') ?: date_default_timezone_get());
+  }
+
+  /**
+   * Minimum headcount (per slot): the field, else 1 for a task and 2 dated.
    */
   public static function minNeeded(NodeInterface $node): int {
     if ($node->hasField('field_task_min_volunteers') && !$node->get('field_task_min_volunteers')->isEmpty()) {
@@ -109,24 +176,19 @@ final class Opportunity {
   }
 
   /**
-   * Shift start as a Unix timestamp, or NULL.
+   * The earliest slot's start as a Unix timestamp, or NULL when undated.
    */
   public static function start(NodeInterface $node): ?int {
-    if (!$node->hasField('field_task_when') || $node->get('field_task_when')->isEmpty()) {
-      return NULL;
-    }
-    return self::storageToTimestamp((string) $node->get('field_task_when')->value);
+    $slots = self::slots($node);
+    return $slots ? (int) array_key_first($slots) : NULL;
   }
 
   /**
-   * Shift end as a Unix timestamp, or NULL.
+   * The latest slot's end as a Unix timestamp, or NULL when undated.
    */
   public static function end(NodeInterface $node): ?int {
-    if (!$node->hasField('field_task_when') || $node->get('field_task_when')->isEmpty()) {
-      return NULL;
-    }
-    $end = (string) $node->get('field_task_when')->end_value;
-    return $end !== '' ? self::storageToTimestamp($end) : NULL;
+    $slots = self::slots($node);
+    return $slots ? max(array_column($slots, 'end')) : NULL;
   }
 
   /**
@@ -168,22 +230,27 @@ final class Opportunity {
   }
 
   /**
-   * "Sat Oct 3, 10:00am–1:00pm" in the site timezone, or '' when undated.
+   * "Sat Oct 3, 10:00am–1:00pm", or for several slots on one day
+   * "Sun Oct 11: 9:45am–12:00pm, 12:00pm–2:15pm"; '' when undated.
    */
   public static function whenLabel(NodeInterface $node): string {
-    $start = self::start($node);
-    if (!$start) {
+    $slots = self::slots($node);
+    if (!$slots) {
       return '';
     }
-    $tz = new \DateTimeZone(\Drupal::config('system.date')->get('timezone.default') ?: date_default_timezone_get());
-    $s = (new \DateTime('@' . $start))->setTimezone($tz);
-    $out = $s->format('D M j, g:ia');
-    $end = self::end($node);
-    if ($end && $end > $start) {
-      $e = (new \DateTime('@' . $end))->setTimezone($tz);
-      $out .= $e->format('Y-m-d') === $s->format('Y-m-d') ? '–' . $e->format('g:ia') : ' – ' . $e->format('D M j, g:ia');
+    if (count($slots) === 1) {
+      $slot = reset($slots);
+      return self::slotLabel($slot['start'], $slot['end'], TRUE);
     }
-    return $out;
+    $days = [];
+    foreach ($slots as $slot) {
+      $days[self::day($slot['start'])][] = self::slotLabel($slot['start'], $slot['end']);
+    }
+    $parts = [];
+    foreach ($days as $day => $labels) {
+      $parts[] = (new \DateTime($day, self::timezone()))->format('D M j') . ': ' . implode(', ', $labels);
+    }
+    return implode('; ', $parts);
   }
 
   /**
@@ -193,8 +260,7 @@ final class Opportunity {
     if (!$ts) {
       return '';
     }
-    $tz = new \DateTimeZone(\Drupal::config('system.date')->get('timezone.default') ?: date_default_timezone_get());
-    return (new \DateTime('@' . $ts))->setTimezone($tz)->format('D M j');
+    return (new \DateTime('@' . $ts))->setTimezone(self::timezone())->format('D M j');
   }
 
   /**

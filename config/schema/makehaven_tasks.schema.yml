@@ -26,3 +26,21 @@ makehaven_tasks.settings:
     stale_second_days:
       type: integer
       label: 'Days idle before the second stale-claim nudge'
+    perk_lunch_amount:
+      type: integer
+      label: 'Lunch thank-you, in dollars'
+    perk_lunch_hours:
+      type: float
+      label: 'Hours volunteered in one day that earn the lunch thank-you'
+    perk_hoodie_dates:
+      type: integer
+      label: 'Days volunteered that earn a hoodie'
+    perk_tshirt_material:
+      type: integer
+      label: 'Store item (node id) for the t-shirt'
+    perk_hoodie_material:
+      type: integer
+      label: 'Store item (node id) for the hoodie'
+    outreach_slack_channel:
+      type: string
+      label: 'Slack channel that gets a summary of new tabling opportunities'

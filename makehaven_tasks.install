@@ -25,10 +25,29 @@ function makehaven_tasks_schema(): array {
         'note' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE, 'default' => '', 'description' => '"Saturdays only", "I can bring a truck".'],
         'kind' => ['type' => 'varchar', 'length' => 16, 'not null' => TRUE, 'default' => 'interest', 'description' => 'interest (gathering) or confirmed (approved).'],
         'created' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+        'slot' => ['type' => 'int', 'not null' => TRUE, 'default' => 0, 'description' => 'Start (Unix time) of the time slot signed up for; 0 for an undated task.'],
       ],
       'primary key' => ['id'],
-      'unique keys' => ['nid_uid' => ['nid', 'uid']],
+      'unique keys' => ['nid_uid_slot' => ['nid', 'uid', 'slot']],
       'indexes' => ['uid' => ['uid']],
+    ],
+    'makehaven_volunteer_perk' => [
+      'description' => 'Volunteer thank-yous handed out (t-shirt, lunch, hoodie), and dates marked as a no-show.',
+      'fields' => [
+        'id' => ['type' => 'serial', 'unsigned' => TRUE, 'not null' => TRUE],
+        'uid' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE, 'description' => 'The volunteer.'],
+        'perk' => ['type' => 'varchar', 'length' => 16, 'not null' => TRUE, 'description' => 'tshirt, lunch, hoodie, or no_show.'],
+        'ref' => ['type' => 'varchar', 'length' => 32, 'not null' => TRUE, 'default' => '', 'description' => 'Y-m-d for lunch and no_show; empty for the one-off t-shirt and hoodie.'],
+        'nid' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE, 'default' => 0, 'description' => 'The opportunity it was earned on, when known.'],
+        'status' => ['type' => 'varchar', 'length' => 16, 'not null' => TRUE, 'default' => 'given', 'description' => 'given or skipped (declined, already has one).'],
+        'note' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE, 'default' => '', 'description' => 'Size, amount, or why skipped.'],
+        'adjustment_id' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE, 'default' => 0, 'description' => 'The store inventory adjustment that took the item off the shelf.'],
+        'by_uid' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE, 'default' => 0],
+        'created' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      ],
+      'primary key' => ['id'],
+      'unique keys' => ['uid_perk_ref' => ['uid', 'perk', 'ref']],
+      'indexes' => ['perk' => ['perk']],
     ],
   ];
 }
@@ -38,10 +57,14 @@ function makehaven_tasks_schema(): array {
  */
 function _makehaven_tasks_volunteer_field_config_names(): array {
   $names = [];
-  foreach (['stage', 'type', 'when', 'min_volunteers', 'max_volunteers', 'decide_by', 'decision_note', 'interest'] as $field) {
+  $fields = ['stage', 'type', 'when', 'min_volunteers', 'max_volunteers', 'decide_by', 'decision_note', 'interest',
+    // Tabling (update 9008).
+    'event_url', 'organizer', 'rsvp_by', 'org_status', 'fee', 'selling_ok', 'bring',
+  ];
+  foreach ($fields as $field) {
     $names[] = 'field.storage.node.field_task_' . $field;
   }
-  foreach (['stage', 'type', 'when', 'min_volunteers', 'max_volunteers', 'decide_by', 'decision_note', 'interest'] as $field) {
+  foreach ($fields as $field) {
     $names[] = 'field.field.node.task.field_task_' . $field;
   }
   return $names;
@@ -650,4 +673,131 @@ function makehaven_tasks_update_9007() {
     '@fields' => $created ? implode(', ', $created) : 'no new fields (already present)',
     '@settings' => $set ? implode(', ', $set) : 'no new settings',
   ]);
+}
+
+/**
+ * Reads a config object from the site's sync directory, else the module copy.
+ *
+ * Storage changes made by update hooks match what is exported, so a later
+ * `drush cim` sees no difference.
+ */
+function _makehaven_tasks_read_config(string $name): ?array {
+  try {
+    $sync = \Drupal::service('config.storage.sync');
+    if ($sync->exists($name)) {
+      return $sync->read($name) ?: NULL;
+    }
+  }
+  catch (\Throwable $e) {
+  }
+  $module_storage = new FileStorage(\Drupal::service('extension.list.module')->getPath('makehaven_tasks') . '/config/optional');
+  return $module_storage->read($name) ?: NULL;
+}
+
+/**
+ * Volunteer board phase 2 (1 of 4): sign-up slots and the thank-you ledger.
+ */
+function makehaven_tasks_update_9008() {
+  $done = [];
+  $schema = \Drupal::database()->schema();
+  if ($schema->tableExists('makehaven_task_signup') && !$schema->fieldExists('makehaven_task_signup', 'slot')) {
+    $schema->addField('makehaven_task_signup', 'slot', makehaven_tasks_schema()['makehaven_task_signup']['fields']['slot']);
+  }
+  if ($schema->tableExists('makehaven_task_signup') && $schema->indexExists('makehaven_task_signup', 'nid_uid')) {
+    $schema->dropUniqueKey('makehaven_task_signup', 'nid_uid');
+    $schema->addUniqueKey('makehaven_task_signup', 'nid_uid_slot', ['nid', 'uid', 'slot']);
+    $done[] = 'sign-ups record their time slot';
+  }
+  if (!$schema->tableExists('makehaven_volunteer_perk')) {
+    $schema->createTable('makehaven_volunteer_perk', makehaven_tasks_schema()['makehaven_volunteer_perk']);
+    $done[] = 'thank-you ledger';
+  }
+
+  $config = \Drupal::configFactory()->getEditable('makehaven_tasks.settings');
+  $defaults = [
+    'perk_lunch_amount' => 15,
+    'perk_lunch_hours' => 3,
+    'perk_hoodie_dates' => 5,
+    'perk_tshirt_material' => 19384,
+    'perk_hoodie_material' => 41386,
+    'outreach_slack_channel' => '#outreach-retention-committee',
+  ];
+  $set = [];
+  foreach ($defaults as $key => $value) {
+    if ($config->get($key) === NULL) {
+      $config->set($key, $value);
+      $set[] = $key;
+    }
+  }
+  if ($set) {
+    $config->save();
+    $done[] = 'settings ' . implode(', ', $set);
+  }
+  return t('Volunteer board: @done.', ['@done' => $done ? implode('; ', $done) : 'nothing to do']);
+}
+
+/**
+ * Volunteer board phase 2 (2 of 4): time slots and the tabling type.
+ *
+ * field_task_when becomes multi-value (one item per slot); field_task_type
+ * gains "tabling".
+ */
+function makehaven_tasks_update_9009() {
+  $done = [];
+  \Drupal\Component\Utility\Environment::setTimeLimit(300);
+  $when = FieldStorageConfig::load('node.field_task_when');
+  if ($when && $when->getCardinality() !== FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED) {
+    $when->setCardinality(FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED);
+    $when->save();
+    $done[] = 'several time slots per opportunity';
+  }
+  \Drupal\Component\Utility\Environment::setTimeLimit(300);
+  $type = FieldStorageConfig::load('node.field_task_type');
+  if ($type) {
+    // The entity API holds list values as value => label.
+    $allowed = $type->getSetting('allowed_values');
+    if (!isset($allowed['tabling'])) {
+      $allowed['tabling'] = 'Tabling (representing MakeHaven at an outside event)';
+      $type->setSetting('allowed_values', $allowed);
+      $type->save();
+      $done[] = 'tabling type';
+    }
+  }
+  $field = FieldConfig::load('node.task.field_task_when');
+  $wanted = _makehaven_tasks_read_config('field.field.node.task.field_task_when');
+  if ($field && $wanted && $field->getDescription() !== $wanted['description']) {
+    $field->setDescription($wanted['description'])->save();
+  }
+  return t('Volunteer board: @done.', ['@done' => $done ? implode('; ', $done) : 'nothing to do']);
+}
+
+/**
+ * Volunteer board phase 2 (3 of 4): the tabling fields.
+ */
+function makehaven_tasks_update_9010() {
+  $created = _makehaven_tasks_install_volunteer_fields();
+  return t('Volunteer board: @fields.', ['@fields' => $created ? 'created ' . implode(', ', $created) : 'tabling fields already present']);
+}
+
+/**
+ * Volunteer board phase 2 (4 of 4): "Volunteer appreciation" store reason.
+ *
+ * Giving a volunteer a t-shirt or hoodie records a store inventory
+ * adjustment with this reason, so the shelf count stays right.
+ */
+function makehaven_tasks_update_9011() {
+  \Drupal\Component\Utility\Environment::setTimeLimit(300);
+  $reason = FieldStorageConfig::load('material_inventory.field_inventory_change_reason');
+  if (!$reason) {
+    return t('No store inventory reasons on this site; skipped.');
+  }
+  // The entity API holds list values as value => label.
+  $allowed = $reason->getSetting('allowed_values');
+  if (isset($allowed['volunteer_appreciation'])) {
+    return t('Store reason already present.');
+  }
+  $allowed['volunteer_appreciation'] = 'Volunteer appreciation';
+  $reason->setSetting('allowed_values', $allowed);
+  $reason->save();
+  return t('Added store inventory reason "Volunteer appreciation".');
 }

@@ -43,20 +43,129 @@ final class Notifier {
 
   /**
    * A new opportunity is gathering interest.
+   *
+   * Tabling also gets a one-line summary in the outreach committee's channel
+   * (JR, 2026-09-28), so the committee sees every table without the recruiting.
    */
   public function recruiting(NodeInterface $node): void {
     $needed = Opportunity::minNeeded($node);
     $when = Opportunity::whenLabel($node);
     $decide = Opportunity::dateLabel(Opportunity::decideBy($node));
+    $per = Opportunity::hasSlots($node) ? ' per time slot' : '';
     $this->slack(sprintf(
-      "🙋 *Volunteers wanted:* <%s|%s>\n%sNeeds *%d* %s%s. Tap \"I'm interested\" on the board if you can help.",
+      "🙋 *Volunteers wanted:* <%s|%s>\n%sNeeds *%d* %s%s%s. Tap \"I'm in\" on the board if you can help%s.",
       $this->url($node),
       $this->escape($node->label()),
       $when !== '' ? $when . "\n" : '',
       $needed,
       $needed === 1 ? 'person' : 'people',
-      $decide !== '' ? ' · decide by *' . $decide . '*' : ''
+      $per,
+      $decide !== '' ? ' · sign up by *' . $decide . '*' : '',
+      Opportunity::hasSlots($node) ? ' (pick one slot or several)' : ''
     ));
+    if (Opportunity::isTabling($node)) {
+      $channel = (string) $this->configFactory->get('makehaven_tasks.settings')->get('outreach_slack_channel');
+      if ($channel !== '') {
+        $this->slack(sprintf('📋 New tabling opportunity on the volunteer board: <%s|%s>%s', $this->url($node), $this->escape($node->label()), $when !== '' ? ' · ' . $when : ''), $channel);
+      }
+    }
+  }
+
+  /**
+   * Email people who asked to hear about this kind of opportunity.
+   *
+   * Opt-in only (the "email me" box on the volunteer preferences form), once
+   * per opportunity, and never to someone already signed up.
+   *
+   * @param int[] $uids
+   *   Subscribers to tell.
+   */
+  public function matching(NodeInterface $node, array $uids): int {
+    $sent = 0;
+    $users = $uids ? $this->entityTypeManager->getStorage('user')->loadMultiple($uids) : [];
+    $when = Opportunity::whenLabel($node);
+    foreach ($users as $user) {
+      if (!$user instanceof UserInterface || !$user->isActive() || $this->signups->has($node, (int) $user->id())) {
+        continue;
+      }
+      $this->mailUser($user, 'volunteer_match', sprintf('Volunteer opportunity: %s', $node->label()), implode("\n\n", array_filter([
+        sprintf('Hi %s,', $user->getDisplayName()),
+        sprintf('You asked to hear about volunteer opportunities like this one: "%s".%s', $node->label(), $when !== '' ? ' When: ' . $when . '.' : ''),
+        'Details and sign-up: ' . $this->url($node),
+        'Change what you hear about, or stop these emails: ' . $this->absolute('makehaven_tasks.preferences'),
+      ])));
+      $sent++;
+    }
+    return $sent;
+  }
+
+  /**
+   * Two days out: remind the roster, with their own slots.
+   */
+  public function rosterReminder(NodeInterface $node): int {
+    $slots = Opportunity::slots($node);
+    $bring = $node->hasField('field_task_bring') ? trim((string) $node->get('field_task_bring')->value) : '';
+    $sent = 0;
+    foreach ($this->signups->list($node) as $row) {
+      if (!$row['user']) {
+        continue;
+      }
+      $mine = $this->slotLines($slots, $row['slots']);
+      $this->mailUser($row['user'], 'volunteer_reminder', sprintf('Coming up: %s', $node->label()), implode("\n\n", array_filter([
+        sprintf('Hi %s,', $row['user']->getDisplayName()),
+        sprintf('A reminder that you are signed up for "%s".', $node->label()),
+        $mine ? "Your time:\n" . $mine : 'When: ' . Opportunity::whenLabel($node),
+        $bring !== '' ? 'Bring / know: ' . $bring : '',
+        "Can't make it any more? Take your name off so staff can find someone: " . $this->absolute('makehaven_tasks.interest', ['node' => $node->id()]),
+        'Details: ' . $this->url($node),
+        'Thank you!',
+      ])));
+      $sent++;
+    }
+    $short = $this->signups->stillNeeded($node);
+    if ($short > 0) {
+      $this->slack(sprintf('⏰ <%s|%s> is in 2 days (%s) and could still use *%d more*.', $this->url($node), $this->escape($node->label()), Opportunity::whenLabel($node), $short));
+    }
+    return $sent;
+  }
+
+  /**
+   * After the last slot ends: thank the roster, and say what they earned.
+   *
+   * @param array<int, string[]> $earned
+   *   uid => thank-you labels now owed to them.
+   */
+  public function thankYou(NodeInterface $node, array $earned): int {
+    $sent = 0;
+    foreach ($this->signups->users($node) as $uid => $user) {
+      $perks = $earned[$uid] ?? [];
+      $this->mailUser($user, 'volunteer_thanks', sprintf('Thank you for volunteering: %s', $node->label()), implode("\n\n", array_filter([
+        sprintf('Hi %s,', $user->getDisplayName()),
+        sprintf('Thank you for helping with "%s". It makes a real difference.', $node->label()),
+        $perks ? 'You have earned: ' . implode(', ', $perks) . '. Staff have been told and will get it to you.' : '',
+        'Didn\'t make it after all? No problem; just reply and let us know.',
+        'More ways to help: ' . $this->boardUrl(),
+      ])));
+      $sent++;
+    }
+    return $sent;
+  }
+
+  /**
+   * "Sun Oct 11, 9:45am–12:00pm" lines for the slots a person is on.
+   */
+  private function slotLines(array $slots, array $mine): string {
+    $lines = [];
+    foreach ($mine as $start) {
+      if (isset($slots[$start])) {
+        $lines[] = '- ' . Opportunity::slotLabel($slots[$start]['start'], $slots[$start]['end'], TRUE);
+      }
+      elseif ($start === 0 && count($slots) === 1) {
+        $slot = reset($slots);
+        $lines[] = '- ' . Opportunity::slotLabel($slot['start'], $slot['end'], TRUE);
+      }
+    }
+    return implode("\n", $lines);
   }
 
   /**
@@ -64,7 +173,7 @@ final class Notifier {
    */
   public function short(NodeInterface $node): void {
     $count = $this->signups->count($node);
-    $more = max(0, Opportunity::minNeeded($node) - $count);
+    $more = $this->signups->stillNeeded($node);
     $this->slack(sprintf(
       "⏳ <%s|%s> needs *%d more* %s by %s. %d interested so far.",
       $this->url($node),
@@ -103,9 +212,11 @@ final class Notifier {
       else {
         $role = 'You are helping. Coordinate with the lead on the task page.';
       }
+      $mine = Opportunity::hasSlots($node) ? $this->slotLines(Opportunity::slots($node), $this->signups->userSlots($node, (int) $uid)) : '';
       $this->mailUser($user, 'volunteer_approved', sprintf('It is on: %s', $node->label()), implode("\n\n", array_filter([
         sprintf('Hi %s,', $user->getDisplayName()),
-        sprintf('"%s" has been approved and is going ahead.%s', $node->label(), $when !== '' ? ' When: ' . $when . '.' : ''),
+        sprintf('"%s" has been approved and is going ahead.%s', $node->label(), $when !== '' && !$mine ? ' When: ' . $when . '.' : ''),
+        $mine ? "Your time:\n" . $mine : '',
         $role,
         $note !== '' ? 'Note from staff: ' . $note : '',
         'Details: ' . $this->url($node),
@@ -144,8 +255,16 @@ final class Notifier {
     foreach ($this->signups->list($node) as $row) {
       $lines[] = '- ' . $row['name'] . ($row['note'] !== '' ? ': ' . $row['note'] : '');
     }
+    if (Opportunity::hasSlots($node)) {
+      $slots = Opportunity::slots($node);
+      foreach ($this->signups->slotCounts($node) as $start => $n) {
+        $lines[] = sprintf('  %s: %d of %d', Opportunity::slotLabel($slots[$start]['start'], $slots[$start]['end'], TRUE), $n, $needed);
+      }
+    }
     $body = implode("\n\n", [
-      sprintf('"%s" has %d interested of %d needed and its decide-by date (%s) has arrived.', $node->label(), $count, $needed, Opportunity::dateLabel(Opportunity::decideBy($node))),
+      Opportunity::hasSlots($node)
+        ? sprintf('"%s" has %d people interested, with every time slot at its %d needed, and its sign-up deadline (%s) has arrived.', $node->label(), $count, $needed, Opportunity::dateLabel(Opportunity::decideBy($node)))
+        : sprintf('"%s" has %d interested of %d needed and its sign-up deadline (%s) has arrived.', $node->label(), $count, $needed, Opportunity::dateLabel(Opportunity::decideBy($node))),
       "Interested:\n" . implode("\n", $lines),
       'Approve or decline it (one click): ' . $this->absolute('makehaven_tasks.approvals'),
       'Task page: ' . $this->url($node),

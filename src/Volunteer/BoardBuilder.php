@@ -25,6 +25,8 @@ final class BoardBuilder {
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly SignupStore $signups,
     private readonly TimeInterface $time,
+    private readonly Preferences $preferences,
+    private readonly Perks $perks,
   ) {}
 
   /**
@@ -158,105 +160,177 @@ final class BoardBuilder {
   }
 
   /**
-   * One opportunity card (gathering or an approved shift).
+   * Everything recruiting, in one list: gathering interest and approved dated
+   * opportunities that have not ended. Dated first, soonest first; undated
+   * ones after, by sign-up deadline.
+   *
+   * @return \Drupal\node\NodeInterface[]
+   *   The opportunities.
+   */
+  public function opportunities(array $filters, AccountInterface $account): array {
+    $all = [];
+    foreach (array_merge($this->gathering($filters, $account), $this->comingUp($filters, $account)) as $node) {
+      $all[(int) $node->id()] = $node;
+    }
+    $key = fn(NodeInterface $n) => Opportunity::start($n) !== NULL ? [0, Opportunity::start($n)] : [1, Opportunity::decideBy($n) ?? PHP_INT_MAX];
+    uasort($all, fn(NodeInterface $a, NodeInterface $b) => $key($a) <=> $key($b));
+    return array_values($all);
+  }
+
+  /**
+   * Whether a task is new (posted in the last week).
+   */
+  public function isNew(NodeInterface $node): bool {
+    return (int) $node->getCreatedTime() >= $this->time->getCurrentTime() - 7 * 86400;
+  }
+
+  /**
+   * Whether a task suits this person: a way they said they like to help, or
+   * a badge it needs that they hold.
+   */
+  public function isForYou(NodeInterface $node, AccountInterface $account): bool {
+    if (!$account->isAuthenticated()) {
+      return FALSE;
+    }
+    if ($this->preferences->matches($node, (int) $account->id())) {
+      return TRUE;
+    }
+    $audience = $node->hasField('field_task_audience') ? (string) $node->get('field_task_audience')->value : '';
+    if ($audience === 'badge_holders' && $node->hasField('field_task_required_badge') && ($tid = (int) $node->get('field_task_required_badge')->target_id)) {
+      return function_exists('_makehaven_tasks_user_has_badge') && _makehaven_tasks_user_has_badge((int) $account->id(), $tid);
+    }
+    return FALSE;
+  }
+
+  /**
+   * One opportunity card: tags, title, when, a fill bar and one button.
    */
   public function cardHtml(NodeInterface $node, AccountInterface $account): string {
     $nid = (int) $node->id();
     $uid = (int) $account->id();
-    $count = $this->signups->count($node);
-    $needed = Opportunity::minNeeded($node);
-    $max = Opportunity::maxAllowed($node);
     $gathering = Opportunity::isGathering($node);
     $url = $node->toUrl()->toString();
+    $slots = Opportunity::slots($node);
+    $counts = $this->signups->slotCounts($node);
+    $min = Opportunity::minNeeded($node);
+    $short = $this->signups->stillNeeded($node);
+    $full = $this->signups->full($node);
+    $e = fn($t) => htmlspecialchars((string) $t, ENT_QUOTES);
 
-    $chips = '<span class="vol-chip vol-chip--' . ($gathering ? 'gathering' : 'shift') . '">'
-      . ($gathering ? t('Gathering interest') : t('Coming up')) . '</span>';
-    if (Opportunity::isShift($node)) {
-      $chips .= '<span class="vol-chip">' . t('Shift') . '</span>';
+    // Status tag: the one thing to know.
+    if ($full) {
+      $status = '<span class="vol-pill vol-pill--full">' . t('Full') . '</span>';
+    }
+    elseif ($short > 0) {
+      $status = '<span class="vol-pill vol-pill--needs">' . t('@n more needed', ['@n' => $short]) . '</span>';
+    }
+    elseif ($gathering) {
+      $status = '<span class="vol-pill vol-pill--ok">' . t('Enough people · staff to confirm') . '</span>';
+    }
+    else {
+      $status = '<span class="vol-pill vol-pill--on">' . t("It's on · room for more") . '</span>';
+    }
+    $chips = $status;
+    if (Opportunity::isTabling($node)) {
+      $chips .= '<span class="vol-chip vol-chip--tabling">' . t('Tabling') . '</span>';
+    }
+    if ($this->isForYou($node, $account)) {
+      $chips .= '<span class="vol-chip vol-chip--you">★ ' . t('For you') . '</span>';
+    }
+    if ($this->isNew($node)) {
+      $chips .= '<span class="vol-chip vol-chip--new">' . t('New') . '</span>';
     }
     $audience = $node->hasField('field_task_audience') ? $node->get('field_task_audience')->value : NULL;
     if ($audience === 'badge_holders') {
       $chips .= '<span class="vol-chip vol-chip--badge">🔑 ' . t('Needs a badge') . '</span>';
     }
 
-    $meta = [];
-    if (($when = Opportunity::whenLabel($node)) !== '') {
-      $meta[] = '🗓 ' . htmlspecialchars($when, ENT_QUOTES);
+    // When: one line. Several slots on a day read "Sun Oct 11 · 3 time slots".
+    $when = '';
+    if (count($slots) > 1) {
+      $days = array_unique(array_map(fn($slot) => Opportunity::dateLabel($slot['start']), $slots));
+      $when = implode(', ', $days) . ' · ' . t('@n time slots', ['@n' => count($slots)]);
     }
-    $count_cls = $count >= $needed ? 'vol-count vol-count--ok' : 'vol-count vol-count--short';
-    $meta[] = '<span class="' . $count_cls . '">' . ($gathering
-      ? t('@count interested of @needed needed', ['@count' => $count, '@needed' => $needed])
-      : t('@count signed up', ['@count' => $count])) . ($max ? ' ' . t('(max @max)', ['@max' => $max]) : '') . '</span>';
-    if ($gathering && ($decide = Opportunity::decideBy($node))) {
-      $meta[] = t('decide by @d', ['@d' => Opportunity::dateLabel($decide)]);
+    elseif ($slots) {
+      $when = Opportunity::whenLabel($node);
     }
 
-    $faces = '';
-    foreach (array_slice($this->signups->list($node), 0, 6) as $row) {
-      $faces .= function_exists('_makehaven_tasks_render_face') ? _makehaven_tasks_render_face($row['uid'], '', 'sm') : '';
+    // Fill bar: people in across every slot, against what is needed.
+    $needed_total = $min * max(1, count($counts));
+    $have = 0;
+    foreach ($counts as $n) {
+      $have += min($n, $min);
     }
+    $pct = $needed_total ? (int) round(100 * $have / $needed_total) : 0;
+    $bar = '<div class="vol-fill" role="img" aria-label="' . $e(t('@have of @need people', ['@have' => $have, '@need' => $needed_total])) . '"><span style="width:' . $pct . '%"></span></div>'
+      . '<span class="vol-fill__label">' . t('@have of @need', ['@have' => $have, '@need' => $needed_total]) . '</span>';
 
     $action = '';
     if ($account->isAuthenticated()) {
       $interest_url = Url::fromRoute('makehaven_tasks.interest', ['node' => $nid])->toString();
       if ($this->signups->has($node, $uid)) {
-        $action = '<span class="task-card-badge task-card-inprogress">✓ ' . ($gathering ? t("You're interested") : t("You're signed up")) . '</span> '
-          . '<a class="task-card-details-link" href="' . $interest_url . '">' . t('Change') . '</a>';
+        $action = '<a class="task-action-btn task-action-btn--done" href="' . $interest_url . '">✓ ' . t("You're in") . '</a>';
       }
-      elseif ($max !== NULL && $count >= $max) {
-        $action = '<span class="task-card-badge">' . t('Full') . '</span>';
-      }
-      else {
-        $action = '<a class="task-action-btn" href="' . $interest_url . '">' . ($gathering ? '🙋 ' . t("I'm interested") : t('Sign me up')) . '</a>';
+      elseif (!$full) {
+        $action = '<a class="task-action-btn" href="' . $interest_url . '">' . t("I'm in") . '</a>';
       }
     }
-    $action .= ' <a class="task-card-details-link" href="' . $url . '">' . t('Details →') . '</a>';
+    else {
+      $action = '<a class="task-action-btn" href="' . Url::fromRoute('user.login', [], ['query' => ['destination' => $url]])->toString() . '">' . t('Log in to sign up') . '</a>';
+    }
 
-    return '<article class="vol-card">'
+    return '<article class="vol-card' . ($gathering ? ' vol-card--gathering' : ' vol-card--on') . '">'
       . '<div class="vol-card__chips">' . $chips . '</div>'
-      . '<h3 class="vol-card__title"><a href="' . $url . '">' . htmlspecialchars((string) $node->label(), ENT_QUOTES) . '</a></h3>'
-      . '<div class="vol-card__meta">' . implode(' · ', $meta) . '</div>'
-      . ($faces ? '<div class="vol-card__people">' . $faces . '</div>' : '')
-      . '<div class="task-card-actions">' . $action . '</div>'
+      . '<h3 class="vol-card__title"><a href="' . $url . '">' . $e($node->label()) . '</a></h3>'
+      . ($when !== '' ? '<div class="vol-card__meta">🗓 ' . $e($when) . '</div>' : '')
+      . '<div class="vol-card__fill">' . $bar . '</div>'
+      . ($action ? '<div class="task-card-actions">' . $action . '</div>' : '')
       . '</article>';
   }
 
   /**
-   * The sections rendered above the task list.
+   * "You've volunteered on 2 days · 3 more for a hoodie" and a nudge to say
+   * how you like to help.
+   */
+  public function youBarHtml(AccountInterface $account): string {
+    if (!$account->isAuthenticated()) {
+      return '';
+    }
+    $uid = (int) $account->id();
+    $bits = [];
+    $progress = $this->perks->progress($uid);
+    if ($progress['days'] > 0) {
+      $bits[] = (string) t('You have volunteered on @n @days.', ['@n' => $progress['days'], '@days' => $progress['days'] === 1 ? t('day') : t('days')])
+        . ($progress['has_hoodie'] || $progress['to_hoodie'] === 0 ? '' : ' ' . t('@n more for a MakeHaven hoodie.', ['@n' => $progress['to_hoodie']]));
+    }
+    $prefs_url = Url::fromRoute('makehaven_tasks.preferences')->toString();
+    $bits[] = $this->preferences->has($uid)
+      ? '<a href="' . $prefs_url . '">' . t('How I like to help') . '</a>'
+      : '<a href="' . $prefs_url . '">' . t('Tell us how you like to help') . '</a> ' . t('and we will point out what suits you.');
+    return '<p class="vol-you">' . implode(' ', $bits) . '</p>';
+  }
+
+  /**
+   * The sections rendered above the ongoing task list.
    */
   public function sectionsHtml(array $filters, AccountInterface $account): string {
-    $html = '';
-    $gathering = $this->gathering($filters, $account);
-    // Always rendered, even when empty: with nothing gathering, a board that
-    // shows only the task list gives no hint that opportunities exist or where
-    // to post one (JR, 2026-09-29, first look at live).
-    $post_url = Url::fromRoute('makehaven_tasks.request')->toString();
-    $elevated = $account->hasPermission('makehaven_tasks.create_task');
-    $post_label = $elevated ? t('Post a volunteer opportunity') : t('Suggest an opportunity');
-    $html .= '<section class="vol-section" aria-labelledby="vol-gathering"><h2 id="vol-gathering">' . t('Gathering interest') . '</h2>'
-      . '<p class="vol-help">' . t('Ideas that go ahead once enough people are in: a build day, a clean-up, staffing a table at a community event. Tap "I\'m interested" on one and staff confirm it once enough people have signed up. Saying you are interested is not a promise.') . '</p>';
-    if ($gathering) {
+    $opportunities = $this->opportunities($filters, $account);
+    $html = $this->youBarHtml($account);
+    $html .= '<section class="vol-section" aria-labelledby="vol-opps"><h2 id="vol-opps">' . t('Volunteer opportunities') . '</h2>';
+    if ($opportunities) {
       $html .= '<div class="vol-cards">';
-      foreach ($gathering as $node) {
+      foreach ($opportunities as $node) {
         $html .= $this->cardHtml($node, $account);
       }
       $html .= '</div>';
     }
     else {
-      $html .= '<p class="vol-empty">' . t('Nothing is gathering volunteers right now.') . '</p>';
+      $html .= '<p class="vol-empty">' . t('Nothing scheduled right now. The ongoing tasks below can be done any time.') . '</p>';
     }
-    $html .= '<p class="vol-post"><a class="task-staff-btn task-staff-btn--primary" href="' . $post_url . '">' . $post_label . '</a>'
-      . ($elevated ? ' <span class="vol-help">' . t('Staff and facilitators: a dated shift (such as tabling at an event) can gather interest first or go straight to the board with its crew.') . '</span>' : '')
-      . '</p></section>';
-    $coming = $this->comingUp($filters, $account);
-    if ($coming) {
-      $html .= '<section class="vol-section" aria-labelledby="vol-coming"><h2 id="vol-coming">' . t('Coming up') . '</h2><div class="vol-cards">';
-      foreach ($coming as $node) {
-        $html .= $this->cardHtml($node, $account);
-      }
-      $html .= '</div></section>';
-    }
-    $html .= '<h2 class="vol-ongoing-heading">' . t('Ongoing tasks') . '</h2>';
+    $html .= '<p class="vol-perks">🎁 ' . htmlspecialchars($this->perks->policyText(), ENT_QUOTES) . '</p>';
+    $html .= '</section>';
+    $html .= '<h2 class="vol-ongoing-heading">' . t('Ongoing tasks') . '</h2>'
+      . '<p class="vol-help">' . t('Things to do any time. ★ marks ones that suit you; claim one to let others know you are on it.') . '</p>';
     return $html;
   }
 

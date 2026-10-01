@@ -59,7 +59,7 @@ final class VolunteerApprovalsController extends ControllerBase {
       ->execute());
     $build['gathering'] = $this->section(
       $this->t('Gathering interest (@n)', ['@n' => count($gathering)]),
-      $this->t('Approve when it is aligned, viable and has enough people. Anything still short on its decide-by date is declined automatically, and only its volunteers are told.'),
+      $this->t('Approve when it is aligned, viable and has enough people. Anything still short on its sign-up deadline is declined automatically, and only its volunteers are told.'),
       $gathering,
       $now
     );
@@ -71,8 +71,8 @@ final class VolunteerApprovalsController extends ControllerBase {
       ->sort('created')
       ->execute());
     $build['proposed'] = $this->section(
-      $this->t('Drafts waiting to be put out (@n)', ['@n' => count($proposed)]),
-      $this->t('Not on the board and not posted anywhere yet. A facilitator or staff member puts one out to gather interest.'),
+      $this->t('Drafts waiting to be published (@n)', ['@n' => count($proposed)]),
+      $this->t('Not on the board and not posted anywhere yet. "Publish to the board" opens sign-ups and posts it to #volunteers.'),
       $proposed,
       $now
     );
@@ -114,8 +114,8 @@ final class VolunteerApprovalsController extends ControllerBase {
       $owner = $node->getOwner();
       $header = '<div class="vol-row-head"><a href="' . $node->toUrl()->toString() . '"><strong>'
         . htmlspecialchars((string) $node->label(), ENT_QUOTES) . '</strong></a>'
-        . ' <span class="vol-kind">' . (Opportunity::isShift($node) ? $this->t('Shift') : $this->t('Task')) . '</span>'
-        . ($overdue ? ' <span class="vol-overdue">' . $this->t('decide-by passed') . '</span>' : '')
+        . ' <span class="vol-kind">' . (Opportunity::isTabling($node) ? $this->t('Tabling') : (Opportunity::isShift($node) ? $this->t('Shift') : $this->t('Task'))) . '</span>'
+        . ($overdue ? ' <span class="vol-overdue">' . $this->t('sign-up deadline passed') . '</span>' : '')
         . ' <span class="vol-meta">' . $this->t('posted by @who', ['@who' => $owner ? $owner->getDisplayName() : '?']) . '</span></div>';
       $form = \Drupal::classResolver(VolunteerDecisionForm::class)->setNid((int) $node->id());
       $section['row_' . $node->id()] = [

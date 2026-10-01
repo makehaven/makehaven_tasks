@@ -1,0 +1,20 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_task_selling_ok
+    - node.type.task
+id: node.task.field_task_selling_ok
+field_name: field_task_selling_ok
+entity_type: node
+bundle: task
+label: Makers may sell work
+description: Volunteers may sell their own work at our table.
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  on_label: 'Yes'
+  off_label: 'No'
+field_type: boolean
