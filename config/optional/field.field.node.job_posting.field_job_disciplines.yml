@@ -1,0 +1,28 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_job_disciplines
+    - node.type.job_posting
+    - taxonomy.vocabulary.area_of_interest
+id: node.job_posting.field_job_disciplines
+field_name: field_job_disciplines
+entity_type: node
+bundle: job_posting
+label: 'Trades'
+description: 'Approving also posts a short pointer to these trades'' Slack channels.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:taxonomy_term'
+  handler_settings:
+    target_bundles:
+      area_of_interest: 'area_of_interest'
+    sort:
+      field: 'name'
+      direction: 'asc'
+    auto_create: false
+    auto_create_bundle: ''
+field_type: entity_reference

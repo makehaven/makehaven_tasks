@@ -1,0 +1,26 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - node
+    - options
+id: node.field_job_source
+field_name: field_job_source
+entity_type: node
+type: list_string
+settings:
+  allowed_values:
+    - value: 'form'
+      label: 'Public form'
+    - value: 'staff'
+      label: 'Staff, on behalf of someone'
+    - value: 'trusted'
+      label: 'Trusted partner'
+  allowed_values_function: ''
+module: options
+locked: false
+cardinality: 1
+translatable: true
+indexes: {  }
+persist_with_no_fields: false
+custom_storage: false

@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_job_submission
+    - node.type.job_posting
+id: node.job_posting.field_job_submission
+field_name: field_job_submission
+entity_type: node
+bundle: job_posting
+label: 'Webform submission'
+description: ''
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  min: null
+  max: null
+  prefix: ''
+  suffix: ''
+field_type: integer
