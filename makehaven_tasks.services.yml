@@ -40,4 +40,4 @@ services:
 
   makehaven_tasks.job_board:
     class: Drupal\makehaven_tasks\JobBoard\JobBoard
-    arguments: ['@entity_type.manager', '@config.factory', '@makehaven_tasks.slack_bot', '@logger.factory', '@file.repository', '@file_system']
+    arguments: ['@entity_type.manager', '@config.factory', '@makehaven_tasks.slack_bot', '@logger.factory']

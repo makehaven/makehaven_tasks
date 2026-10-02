@@ -8,7 +8,6 @@ use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Url;
-use Drupal\file\FileRepositoryInterface;
 use Drupal\makehaven_tasks\SlackBot;
 use Drupal\node\NodeInterface;
 use Drupal\webform\WebformSubmissionInterface;
@@ -48,8 +47,6 @@ class JobBoard {
     protected ConfigFactoryInterface $configFactory,
     protected SlackBot $slack,
     protected LoggerChannelFactoryInterface $loggerFactory,
-    protected FileRepositoryInterface $fileRepository,
-    protected FileSystemInterface $fileSystem,
   ) {}
 
   /**
@@ -313,12 +310,20 @@ class JobBoard {
    * Copies uploaded files next to the posting so webform purges can't orphan it.
    */
   protected function copyAttachments(array $fids): array {
+    $fids = array_filter(array_map('intval', $fids));
+    if (!$fids) {
+      return [];
+    }
+    // Looked up here rather than injected: makehaven_tasks does not depend on
+    // the file module, and only submissions with an upload need it.
+    /** @var \Drupal\file\FileRepositoryInterface $repository */
+    $repository = \Drupal::service('file.repository');
     $items = [];
     $directory = 'private://job-attachments';
-    $this->fileSystem->prepareDirectory($directory, FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS);
-    foreach ($this->entityTypeManager->getStorage('file')->loadMultiple(array_filter(array_map('intval', $fids))) as $file) {
+    \Drupal::service('file_system')->prepareDirectory($directory, FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS);
+    foreach ($this->entityTypeManager->getStorage('file')->loadMultiple($fids) as $file) {
       try {
-        $copy = $this->fileRepository->copy($file, $directory . '/' . $file->getFilename(), FileExists::Rename);
+        $copy = $repository->copy($file, $directory . '/' . $file->getFilename(), FileExists::Rename);
         $items[] = ['target_id' => $copy->id(), 'display' => 1];
       }
       catch (\Throwable $e) {
