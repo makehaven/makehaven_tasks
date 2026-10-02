@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_job_pay
+    - node.type.job_posting
+id: node.job_posting.field_job_pay
+field_name: field_job_pay
+entity_type: node
+bundle: job_posting
+label: 'Pay or budget'
+description: 'For example "$25/hour", "$300 for the job", or "volunteer".'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: string

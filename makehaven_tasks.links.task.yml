@@ -1,0 +1,5 @@
+makehaven_tasks.job_board:
+  title: 'Job board'
+  route_name: makehaven_tasks.job_board
+  base_route: system.admin_content
+  weight: 20

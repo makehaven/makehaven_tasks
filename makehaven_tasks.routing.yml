@@ -198,3 +198,51 @@ makehaven_tasks.pool:
     _title: 'Volunteer pool'
   requirements:
     _permission: 'makehaven_tasks.create_task'
+
+# Job board: outside requests from the Hire a Maker form (/commission).
+makehaven_tasks.job_board:
+  path: '/admin/content/job-board'
+  defaults:
+    _controller: '\Drupal\makehaven_tasks\Controller\JobBoardController::queue'
+    _title: 'Job board'
+  requirements:
+    _permission: 'review job board'
+
+makehaven_tasks.job_board.approve:
+  path: '/admin/content/job-board/{node}/approve'
+  defaults:
+    _controller: '\Drupal\makehaven_tasks\Controller\JobBoardController::approve'
+  requirements:
+    _permission: 'review job board'
+    _csrf_token: 'TRUE'
+    node: \d+
+  options:
+    parameters:
+      node:
+        type: entity:node
+
+makehaven_tasks.job_board.decline:
+  path: '/admin/content/job-board/{node}/decline'
+  defaults:
+    _controller: '\Drupal\makehaven_tasks\Controller\JobBoardController::decline'
+  requirements:
+    _permission: 'review job board'
+    _csrf_token: 'TRUE'
+    node: \d+
+  options:
+    parameters:
+      node:
+        type: entity:node
+
+makehaven_tasks.job_board.repost:
+  path: '/admin/content/job-board/{node}/repost'
+  defaults:
+    _controller: '\Drupal\makehaven_tasks\Controller\JobBoardController::repost'
+  requirements:
+    _permission: 'review job board'
+    _csrf_token: 'TRUE'
+    node: \d+
+  options:
+    parameters:
+      node:
+        type: entity:node

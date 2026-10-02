@@ -38,3 +38,10 @@ makehaven_tasks.settings:
   description: 'Configure display code word.'
   route_name: makehaven_tasks.settings_form
   parent: system.admin_config_system
+
+makehaven_tasks.job_board:
+  title: 'Job board'
+  description: 'Approve outside commissions, jobs and event staffing before they post to Slack #jobs.'
+  route_name: makehaven_tasks.job_board
+  parent: system.admin_content
+  weight: 20

@@ -44,3 +44,23 @@ makehaven_tasks.settings:
     outreach_slack_channel:
       type: string
       label: 'Slack channel that gets a summary of new tabling opportunities'
+    job_board_post_to_slack:
+      type: boolean
+      label: 'Job board: post approved requests to Slack'
+    job_board_channel:
+      type: string
+      label: 'Job board: Slack channel (ID or name) for approved requests'
+    job_board_trade_channels:
+      type: integer
+      label: 'Job board: most trade channels to cross-post a pointer to'
+    job_board_review_channel:
+      type: string
+      label: 'Job board: channel for the "waiting for review" alert (empty = DM reviewers)'
+    job_board_review_group:
+      type: string
+      label: 'Job board: Slack user group ID mentioned in the review alert (e.g. @staff)'
+    job_board_trusted_senders:
+      type: sequence
+      label: 'Job board: requester emails or @domains whose requests skip review'
+      sequence:
+        type: string

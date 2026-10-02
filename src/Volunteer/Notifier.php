@@ -11,6 +11,7 @@ use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\Url;
+use Drupal\makehaven_tasks\SlackBot;
 use Drupal\node\NodeInterface;
 use Drupal\user\UserInterface;
 use GuzzleHttp\ClientInterface;
@@ -37,6 +38,7 @@ final class Notifier {
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly SignupStore $signups,
     private readonly LanguageManagerInterface $languageManager,
+    private readonly SlackBot $slackBot,
   ) {}
 
   // -- Slack: recruitment only ------------------------------------------------
@@ -300,25 +302,17 @@ final class Notifier {
 
   /**
    * Posts one mrkdwn message to the recruitment channel.
+   *
+   * Goes out as the Member Sync bot, not the slack_connector webhook: a
+   * modern webhook is locked to the one channel it was created for and
+   * silently ignores 'channel', so posts meant for #volunteer and the
+   * outreach channel never reached them. The bot joins public channels on
+   * its own.
    */
   public function slack(string $text, ?string $channel = NULL): bool {
-    $webhook = (string) $this->configFactory->get('slack_connector.settings')->get('webhook_url');
-    $channel = $channel ?? (string) ($this->configFactory->get('makehaven_tasks.settings')->get('volunteer_slack_channel') ?: '#volunteers');
-    $channel = '#' . ltrim($channel, '#');
-    if ($webhook === '') {
-      $this->loggerFactory->get('makehaven_tasks')->notice('Slack not posted (no webhook configured) to @channel: @text', ['@channel' => $channel, '@text' => $text]);
-      return FALSE;
-    }
+    $channel = $channel ?? (string) ($this->configFactory->get('makehaven_tasks.settings')->get('volunteer_slack_channel') ?: '#volunteer');
     try {
-      $this->httpClient->request('POST', $webhook, [
-        'headers' => ['Content-Type' => 'application/json'],
-        'json' => [
-          'channel' => $channel,
-          'text' => $text,
-          'blocks' => [['type' => 'section', 'text' => ['type' => 'mrkdwn', 'text' => $text]]],
-        ],
-        'timeout' => 10,
-      ]);
+      $this->slackBot->post($channel, $text);
       return TRUE;
     }
     catch (\Throwable $e) {

@@ -467,6 +467,9 @@ function makehaven_tasks_node_delete(NodeInterface $node) {
  * and to facilitators/staff (makehaven_tasks.create_task), who release it.
  */
 function makehaven_tasks_node_access(NodeInterface $node, $op, AccountInterface $account) {
+  if ($op === 'view' && $node->bundle() === 'job_posting') {
+    return _makehaven_tasks_job_posting_access($node, $account);
+  }
   if ($op !== 'view' || $node->bundle() !== 'task' || !Opportunity::fieldsInstalled()
     || Opportunity::stage($node) !== Opportunity::STAGE_PROPOSED) {
     return AccessResult::neutral();
@@ -477,6 +480,49 @@ function makehaven_tasks_node_access(NodeInterface $node, $op, AccountInterface 
     ->cachePerPermissions()
     ->cachePerUser()
     ->addCacheableDependency($node);
+}
+
+/**
+ * View access for job board postings (Hire a Maker form).
+ *
+ * Postings from the form carry a requester's phone and email, so only people
+ * with "view job board" (members, staff) may see them; reviewers may also see
+ * unpublished ones. MakeHaven's own hiring pages are job_posting nodes with no
+ * source and are left alone.
+ */
+function _makehaven_tasks_job_posting_access(NodeInterface $node, AccountInterface $account): AccessResult {
+  if (!\Drupal::service('makehaven_tasks.job_board')->isIntake($node)) {
+    return AccessResult::neutral()->addCacheableDependency($node);
+  }
+  if ($account->hasPermission('review job board')) {
+    return AccessResult::allowed()->cachePerPermissions()->addCacheableDependency($node);
+  }
+  if (!$account->hasPermission('view job board')) {
+    return AccessResult::forbidden('Job board postings are for members.')->cachePerPermissions()->addCacheableDependency($node);
+  }
+  return AccessResult::neutral()->cachePerPermissions()->addCacheableDependency($node);
+}
+
+/**
+ * Implements hook_search_api_index_items_alter().
+ *
+ * Keeps job board postings out of every search index: the indexes render as
+ * anonymous and site search does not consult hook_node_access, so a posting
+ * would otherwise leak its contact details into results.
+ */
+function makehaven_tasks_search_api_index_items_alter($index, array &$items) {
+  $job_board = \Drupal::service('makehaven_tasks.job_board');
+  foreach ($items as $id => $item) {
+    try {
+      $entity = $item->getOriginalObject()->getValue();
+    }
+    catch (\Throwable $e) {
+      continue;
+    }
+    if ($entity instanceof NodeInterface && $job_board->isIntake($entity)) {
+      unset($items[$id]);
+    }
+  }
 }
 
 /**
@@ -616,6 +662,10 @@ function makehaven_tasks_query_views_tasks_alter(\Drupal\Core\Database\Query\Alt
  * Defaults field_task_status to 'open' when a task is first published.
  */
 function makehaven_tasks_node_presave(NodeInterface $node) {
+  if ($node->bundle() === 'job_posting') {
+    _makehaven_tasks_job_posting_presave($node);
+    return;
+  }
   if ($node->bundle() !== 'task') {
     return;
   }
@@ -632,6 +682,26 @@ function makehaven_tasks_node_presave(NodeInterface $node) {
   }
   // Volunteer board: default decide-by (created + 8 days) while gathering.
   \Drupal::service('makehaven_tasks.volunteer_decider')->presave($node);
+}
+
+/**
+ * Job board: the first publish of a form posting is the approval.
+ *
+ * Posts it to Slack #jobs and stores the message ts, so it never posts twice.
+ */
+function _makehaven_tasks_job_posting_presave(NodeInterface $node): void {
+  if ($node->isNew() || !$node->isPublished()) {
+    return;
+  }
+  $job_board = \Drupal::service('makehaven_tasks.job_board');
+  if (!$job_board->isIntake($node) || !$node->get('field_job_slack_ts')->isEmpty()) {
+    return;
+  }
+  $original = $node->original ?? NULL;
+  if ($original instanceof NodeInterface && $original->isPublished()) {
+    return;
+  }
+  $job_board->postToSlack($node);
 }
 
 /**

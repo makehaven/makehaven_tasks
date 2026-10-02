@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\makehaven_tasks\Kernel;
 
+use Drupal\makehaven_tasks\SlackBot;
 use Drupal\Core\Form\FormState;
 use Drupal\Core\Test\AssertMailTrait;
 use Drupal\field\Entity\FieldConfig;
@@ -70,9 +71,6 @@ class VolunteerBoardKernelTest extends KernelTestBase {
     $this->installConfig(['field', 'node', 'user', 'system', 'flag']);
     $this->config('system.mail')->set('interface.default', 'test_mail_collector')->save();
     $this->config('system.site')->set('mail', 'site@example.com')->save();
-    // A dummy webhook, so Slack posts are attempted and can be counted; the
-    // mock client below answers them and nothing leaves the test.
-    $this->config('slack_connector.settings')->set('webhook_url', 'https://hooks.example.invalid/T000/B000')->save();
     $this->config('makehaven_tasks.settings')->setData([
       'code_word' => 'makers',
       'volunteer_slack_channel' => '#volunteers',
@@ -216,7 +214,7 @@ class VolunteerBoardKernelTest extends KernelTestBase {
     $this->assertCount(1, $mails, 'Only the one interested volunteer is emailed.');
     $this->assertSame('alice@example.com', $mails[0]['to']);
     $this->assertSame('volunteer_declined', $mails[0]['key']);
-    $this->assertSame([], $this->httpHistory, 'A decline is never posted to Slack.');
+    $this->assertSame([], RecordingSlackBot::$posts, 'A decline is never posted to Slack.');
   }
 
   /**
@@ -292,7 +290,7 @@ class VolunteerBoardKernelTest extends KernelTestBase {
     $this->resetOutbound();
     $task = $this->createTask(['field_task_stage' => 'proposed']);
     $this->assertFalse(Node::load($task->id())->isPublished());
-    $this->assertSame([], $this->httpHistory, 'No Slack post for a proposed draft.');
+    $this->assertSame([], RecordingSlackBot::$posts, 'No Slack post for a proposed draft.');
   }
 
   // ── Stale claims ───────────────────────────────────────────────────────────
@@ -321,7 +319,7 @@ class VolunteerBoardKernelTest extends KernelTestBase {
     $this->decider()->tick($now + 29 * 86400);
     $this->assertCount(2, $this->getMails(['key' => 'stale_claim']), 'A second nudge at 28 days.');
     $this->assertCount(0, array_filter($this->getMails(), fn($m) => $m['to'] === 'bob@example.com'), 'The pre-launch claimant is never emailed.');
-    $this->assertSame([], $this->httpHistory, 'Stale nudges are never posted to Slack.');
+    $this->assertSame([], RecordingSlackBot::$posts, 'Stale nudges are never posted to Slack.');
 
     $claims = $this->decider()->staleClaims($now + 29 * 86400);
     $this->assertSame([(int) $old_claim->id()], array_column($claims['pre_launch'], 'nid'), 'The old claim is on the staff cleanup list.');
@@ -610,9 +608,8 @@ class VolunteerBoardKernelTest extends KernelTestBase {
    */
   protected function slackPosts(string $channel, string $contains = ''): array {
     $out = [];
-    foreach ($this->httpHistory as $entry) {
-      $payload = json_decode((string) $entry['request']->getBody(), TRUE);
-      if (($payload['channel'] ?? '') === $channel && ($contains === '' || str_contains($payload['text'] ?? '', $contains))) {
+    foreach (RecordingSlackBot::$posts as $payload) {
+      if ($payload['channel'] === $channel && ($contains === '' || str_contains($payload['text'], $contains))) {
         $out[] = $payload;
       }
     }
@@ -621,6 +618,7 @@ class VolunteerBoardKernelTest extends KernelTestBase {
 
   protected function resetOutbound(): void {
     $this->httpHistory = [];
+    RecordingSlackBot::$posts = [];
     \Drupal::state()->set('system.test_mail_collector', []);
   }
 
@@ -629,6 +627,14 @@ class VolunteerBoardKernelTest extends KernelTestBase {
     $stack = HandlerStack::create(new MockHandler($responses));
     $stack->push(Middleware::history($this->httpHistory));
     $this->container->set('http_client', new Client(['handler' => $stack]));
+    // Slack goes out through the bot; record its posts instead of sending.
+    RecordingSlackBot::$posts = [];
+    $this->container->set('makehaven_tasks.slack_bot', new RecordingSlackBot(
+      $this->container->get('config.factory'),
+      $this->container->get('http_client'),
+      $this->container->get('logger.factory'),
+      $this->container->get('state'),
+    ));
     foreach (['makehaven_tasks.volunteer_notifier', 'makehaven_tasks.volunteer_decider'] as $id) {
       $this->container->set($id, NULL);
     }
@@ -682,6 +688,26 @@ class VolunteerBoardKernelTest extends KernelTestBase {
     }
     FieldStorageConfig::create(['field_name' => 'field_task_helpers', 'entity_type' => 'node', 'type' => 'entity_reference', 'settings' => ['target_type' => 'user'], 'cardinality' => -1])->save();
     FieldConfig::create(['field_name' => 'field_task_helpers', 'entity_type' => 'node', 'bundle' => 'task', 'label' => 'Helpers'])->save();
+  }
+
+}
+
+/**
+ * Records Slack posts instead of sending them.
+ */
+class RecordingSlackBot extends SlackBot {
+
+  /**
+   * Posts made, as ['channel' => …, 'text' => …].
+   */
+  public static array $posts = [];
+
+  /**
+   * {@inheritdoc}
+   */
+  public function post(string $channel, string $text): string {
+    static::$posts[] = ['channel' => $channel, 'text' => $text];
+    return '1.' . count(static::$posts);
   }
 
 }

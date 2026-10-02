@@ -13,3 +13,11 @@ makehaven_tasks.manage_bank:
 makehaven_tasks.manage_tasks:
   title: 'Access the task manager'
   description: 'View the staff task manager dashboard with filters and bulk operations.'
+
+view job board:
+  title: 'View job board postings'
+  description: 'See outside requests from the Hire a Maker form, including the requester''s contact details. Give this to members and staff.'
+
+review job board:
+  title: 'Review job board requests'
+  description: 'Approve or decline Hire a Maker requests at /admin/content/job-board; approving posts to Slack #jobs. People with this role permission also get the Slack DM when a request arrives.'

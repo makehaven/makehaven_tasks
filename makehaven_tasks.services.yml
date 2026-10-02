@@ -5,7 +5,7 @@ services:
 
   makehaven_tasks.volunteer_notifier:
     class: Drupal\makehaven_tasks\Volunteer\Notifier
-    arguments: ['@config.factory', '@http_client', '@logger.factory', '@plugin.manager.mail', '@entity_type.manager', '@makehaven_tasks.volunteer_signups', '@language_manager']
+    arguments: ['@config.factory', '@http_client', '@logger.factory', '@plugin.manager.mail', '@entity_type.manager', '@makehaven_tasks.volunteer_signups', '@language_manager', '@makehaven_tasks.slack_bot']
 
   makehaven_tasks.volunteer_decider:
     class: Drupal\makehaven_tasks\Volunteer\Decider
@@ -33,3 +33,11 @@ services:
     arguments: ['@current_route_match', '@current_user']
     tags:
       - { name: event_subscriber }
+
+  makehaven_tasks.slack_bot:
+    class: Drupal\makehaven_tasks\SlackBot
+    arguments: ['@config.factory', '@http_client', '@logger.factory', '@state']
+
+  makehaven_tasks.job_board:
+    class: Drupal\makehaven_tasks\JobBoard\JobBoard
+    arguments: ['@entity_type.manager', '@config.factory', '@makehaven_tasks.slack_bot', '@logger.factory', '@file.repository', '@file_system']

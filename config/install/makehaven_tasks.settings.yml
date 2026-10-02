@@ -1,5 +1,5 @@
 code_word: 'makers'
-volunteer_slack_channel: '#volunteers'
+volunteer_slack_channel: '#volunteer'
 ready_to_approve_email: 'staff@makehaven.org'
 gathering_days: 8
 short_reminder_days: 3
@@ -12,3 +12,9 @@ perk_hoodie_dates: 5
 perk_tshirt_material: 19384
 perk_hoodie_material: 41386
 outreach_slack_channel: '#outreach-retention-committee'
+job_board_post_to_slack: true
+job_board_channel: C3BSZ8DDJ
+job_board_trade_channels: 2
+job_board_review_channel: ''
+job_board_review_group: S014AFFKAF4
+job_board_trusted_senders: {  }

@@ -46,8 +46,8 @@ class TasksSettingsForm extends ConfigFormBase {
     $form['volunteer']['volunteer_slack_channel'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Recruitment Slack channel'),
-      '#description' => $this->t('New opportunities gathering interest, the one "needs N more" nudge and "it\'s on" announcements post here, through the Slack Connector webhook. Declines and stale-claim nudges are never posted. The #tasks posts are unchanged.'),
-      '#default_value' => $config->get('volunteer_slack_channel') ?? '#volunteers',
+      '#description' => $this->t('New opportunities gathering interest, the one "needs N more" nudge and "it\'s on" announcements post here, as the MakeHaven Member Sync bot (it joins public channels by itself). Declines and stale-claim nudges are never posted. The #tasks posts are unchanged.'),
+      '#default_value' => $config->get('volunteer_slack_channel') ?? '#volunteer',
       '#required' => TRUE,
     ];
     $form['volunteer']['ready_to_approve_email'] = [
@@ -138,6 +138,53 @@ class TasksSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('perk_hoodie_material') ?? 41386,
     ];
 
+    $form['job_board'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Job board (Hire a Maker form)'),
+      '#open' => TRUE,
+      '#description' => $this->t('Outside requests from <a href=":form">/commission</a> wait at <a href=":queue">Content » Job board</a>. Approving posts them to Slack as the MakeHaven Member Sync bot. Non-live sites have no Slack token, so nothing posts from them.', [
+        ':form' => '/commission',
+        ':queue' => '/admin/content/job-board',
+      ]),
+    ];
+    $form['job_board']['job_board_post_to_slack'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Post approved requests to Slack'),
+      '#default_value' => $config->get('job_board_post_to_slack') ?? TRUE,
+    ];
+    $form['job_board']['job_board_channel'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Jobs channel'),
+      '#description' => $this->t('Channel ID or public channel name. C3BSZ8DDJ is #jobs.'),
+      '#default_value' => $config->get('job_board_channel') ?? 'C3BSZ8DDJ',
+    ];
+    $form['job_board']['job_board_trade_channels'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Trade channels to cross-post to'),
+      '#description' => $this->t('A short pointer goes to the Slack channel of each trade the requester picked (for example #metal or #woodworking), up to this many. 0 turns it off.'),
+      '#min' => 0,
+      '#max' => 5,
+      '#default_value' => $config->get('job_board_trade_channels') ?? 2,
+    ];
+    $form['job_board']['job_board_review_channel'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Staff alert channel'),
+      '#description' => $this->t('Leave empty to send each person whose role can review the job board a Slack direct message instead (they need a Slack ID on their profile). If you name a channel, the alert posts there mentioning the group below.'),
+      '#default_value' => $config->get('job_board_review_channel') ?? '',
+    ];
+    $form['job_board']['job_board_review_group'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Group to mention in the alert channel'),
+      '#description' => $this->t('A Slack user group ID. S014AFFKAF4 is @staff.'),
+      '#default_value' => $config->get('job_board_review_group') ?? 'S014AFFKAF4',
+    ];
+    $form['job_board']['job_board_trusted_senders'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Trusted senders'),
+      '#description' => $this->t('One per line: an email address, or @domain.org for a whole organization. Their requests skip review and post right away. The form cannot prove who typed an address, so list only partners where a mistaken post would be harmless. Staff filling in the form for a caller always skip review.'),
+      '#default_value' => implode("\n", (array) ($config->get('job_board_trusted_senders') ?? [])),
+    ];
+
     return parent::buildForm($form, $form_state);
   }
 
@@ -160,6 +207,15 @@ class TasksSettingsForm extends ConfigFormBase {
       ->set('perk_hoodie_dates', (int) $form_state->getValue('perk_hoodie_dates'))
       ->set('perk_tshirt_material', (int) $form_state->getValue('perk_tshirt_material'))
       ->set('perk_hoodie_material', (int) $form_state->getValue('perk_hoodie_material'))
+      ->set('job_board_post_to_slack', (bool) $form_state->getValue('job_board_post_to_slack'))
+      ->set('job_board_channel', trim((string) $form_state->getValue('job_board_channel')))
+      ->set('job_board_trade_channels', (int) $form_state->getValue('job_board_trade_channels'))
+      ->set('job_board_review_channel', trim((string) $form_state->getValue('job_board_review_channel')))
+      ->set('job_board_review_group', trim((string) $form_state->getValue('job_board_review_group')))
+      ->set('job_board_trusted_senders', array_values(array_filter(array_map(
+        fn($line) => strtolower(trim($line)),
+        preg_split('/\R/', (string) $form_state->getValue('job_board_trusted_senders'))
+      ))))
       ->save();
 
     parent::submitForm($form, $form_state);
