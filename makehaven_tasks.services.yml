@@ -9,13 +9,27 @@ services:
 
   makehaven_tasks.volunteer_decider:
     class: Drupal\makehaven_tasks\Volunteer\Decider
-    arguments: ['@entity_type.manager', '@makehaven_tasks.volunteer_signups', '@makehaven_tasks.volunteer_notifier', '@config.factory', '@keyvalue', '@datetime.time', '@logger.factory', '@database']
+    arguments: ['@entity_type.manager', '@makehaven_tasks.volunteer_signups', '@makehaven_tasks.volunteer_notifier', '@config.factory', '@keyvalue', '@datetime.time', '@logger.factory', '@database', '@makehaven_tasks.volunteer_perks', '@makehaven_tasks.volunteer_preferences']
 
   makehaven_tasks.volunteer_board:
     class: Drupal\makehaven_tasks\Volunteer\BoardBuilder
-    arguments: ['@entity_type.manager', '@makehaven_tasks.volunteer_signups', '@datetime.time']
+    arguments: ['@entity_type.manager', '@makehaven_tasks.volunteer_signups', '@datetime.time', '@makehaven_tasks.volunteer_preferences', '@makehaven_tasks.volunteer_perks']
 
   makehaven_tasks.volunteer_route_subscriber:
     class: Drupal\makehaven_tasks\Routing\VolunteerRouteSubscriber
+    tags:
+      - { name: event_subscriber }
+
+  makehaven_tasks.volunteer_perks:
+    class: Drupal\makehaven_tasks\Volunteer\Perks
+    arguments: ['@database', '@entity_type.manager', '@config.factory', '@datetime.time', '@logger.factory']
+
+  makehaven_tasks.volunteer_preferences:
+    class: Drupal\makehaven_tasks\Volunteer\Preferences
+    arguments: ['@user.data', '@database']
+
+  makehaven_tasks.task_form_redirect:
+    class: Drupal\makehaven_tasks\EventSubscriber\TaskFormRedirectSubscriber
+    arguments: ['@current_route_match', '@current_user']
     tags:
       - { name: event_subscriber }

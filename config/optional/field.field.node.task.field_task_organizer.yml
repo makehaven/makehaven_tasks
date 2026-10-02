@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_task_organizer
+    - node.type.task
+id: node.task.field_task_organizer
+field_name: field_task_organizer
+entity_type: node
+bundle: task
+label: 'Organizer and contact'
+description: 'Who runs the event and how to reach them. Staff and facilitators only.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: string_long

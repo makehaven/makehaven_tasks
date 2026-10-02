@@ -43,6 +43,17 @@ final class Decider {
    */
   public const CLAIMED_AT = 'makehaven_tasks.claimed_at';
 
+  /**
+   * Key-value collection: nid => TRUE when the poster asked for a newsletter
+   * notice once the opportunity is public.
+   */
+  public const ANNOUNCE = 'makehaven_tasks.announce';
+
+  /**
+   * Days before the first slot that the roster reminder goes out.
+   */
+  public const REMIND_DAYS = 2;
+
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly SignupStore $signups,
@@ -52,6 +63,8 @@ final class Decider {
     private readonly TimeInterface $time,
     private readonly LoggerChannelFactoryInterface $loggerFactory,
     private readonly Connection $database,
+    private readonly Perks $perks,
+    private readonly Preferences $preferences,
   ) {}
 
   // -- decisions ------------------------------------------------------------------
@@ -140,7 +153,12 @@ final class Decider {
   }
 
   /**
-   * Insert/update: record claim times and post the recruitment call once.
+   * Insert/update: record claim times, follow moved slots, and announce once.
+   *
+   * Announcing = the #volunteers recruitment call, an email to people who
+   * asked to hear about this kind of opportunity, and (when the poster ticked
+   * it) a newsletter notice. It happens once, when the opportunity first
+   * becomes public: gathering interest, or a dated one posted ready to go.
    */
   public function afterSave(NodeInterface $node, ?NodeInterface $original): void {
     $nid = (int) $node->id();
@@ -161,14 +179,79 @@ final class Decider {
     if (!$node->hasField('field_task_stage')) {
       return;
     }
-    $was_gathering = $original && Opportunity::isGathering($original) && $original->isPublished();
-    if (Opportunity::isGathering($node) && $node->isPublished() && !$was_gathering) {
+
+    // A slot's time edited in place (same position): its sign-ups follow it.
+    if ($original) {
+      $old = array_keys(Opportunity::slots($original));
+      $new = array_keys(Opportunity::slots($node));
+      if ($old && count($old) === count($new) && $old !== $new) {
+        $this->signups->moveSlots($node, array_combine($old, $new));
+      }
+    }
+
+    if ($this->isPublic($node) && !($original && $this->isPublic($original))) {
       $sent = $this->keyValue->get(self::SENT);
       if (!$sent->has($nid . ':recruit')) {
         $this->notifier->recruiting($node);
         $sent->set($nid . ':recruit', $this->time->getCurrentTime());
       }
+      if (!$sent->has($nid . ':match')) {
+        $this->notifier->matching($node, $this->preferences->subscribersFor($node));
+        $sent->set($nid . ':match', $this->time->getCurrentTime());
+      }
+      if ($this->keyValue->get(self::ANNOUNCE)->get((string) $nid)) {
+        $this->announce($node);
+      }
     }
+  }
+
+  /**
+   * Whether an opportunity is out recruiting: gathering interest, or a dated
+   * one posted ready to go that still has room.
+   */
+  private function isPublic(NodeInterface $node): bool {
+    if (!$node->isPublished()) {
+      return FALSE;
+    }
+    if (Opportunity::isGathering($node)) {
+      return TRUE;
+    }
+    if (!Opportunity::isShift($node) || !Opportunity::isApproved($node) || $node->get('field_task_stage')->isEmpty()) {
+      // An approved task with an empty stage is an ordinary task: the
+      // existing #tasks post (slack_task_poster) covers it.
+      return FALSE;
+    }
+    $start = Opportunity::start($node);
+    return $start && $start > $this->time->getCurrentTime() && !$this->signups->full($node);
+  }
+
+  /**
+   * Raises a newsletter notice for the opportunity (once).
+   *
+   * A notice goes to Slack #members at once, the next weekly digest and the
+   * monthly newsletter while it is live (makerspace_digest_scheduler).
+   */
+  public function announce(NodeInterface $node): ?NodeInterface {
+    if (!\Drupal::hasService('makerspace_digest_scheduler.notice_writer')) {
+      return NULL;
+    }
+    $until_ts = Opportunity::start($node) ?: (Opportunity::decideBy($node) ?: $this->time->getCurrentTime() + 14 * 86400);
+    $when = Opportunity::whenLabel($node);
+    $summary = trim(strip_tags((string) $node->get('body')->value));
+    if (mb_strlen($summary) > 280) {
+      $summary = rtrim(mb_substr($summary, 0, 277)) . '…';
+    }
+    $url = $node->toUrl('canonical', ['absolute' => TRUE])->toString();
+    $body = '<p>' . htmlspecialchars($summary, ENT_QUOTES) . '</p>'
+      . ($when !== '' ? '<p><strong>' . htmlspecialchars($when, ENT_QUOTES) . '</strong></p>' : '')
+      . '<p><a href="' . htmlspecialchars($url, ENT_QUOTES) . '">' . t('Sign up on the volunteer board') . '</a>. ' . htmlspecialchars($this->perks->policyText(), ENT_QUOTES) . '</p>';
+    $notice = \Drupal::service('makerspace_digest_scheduler.notice_writer')->create(
+      (string) t('Volunteers wanted: @title', ['@title' => $node->label()]),
+      $body,
+      ['source' => 'volunteer_board', 'key' => 'task:' . $node->id(), 'until' => Opportunity::day($until_ts)]
+    );
+    $this->keyValue->get(self::ANNOUNCE)->delete((string) $node->id());
+    return $notice;
   }
 
   /**
@@ -205,10 +288,11 @@ final class Decider {
       $nid = (int) $node->id();
       $count = $this->signups->count($node);
       $needed = Opportunity::minNeeded($node);
-      $enough = $count >= $needed;
+      $short = $this->signups->stillNeeded($node);
+      $enough = $short === 0;
       $decide_by = Opportunity::decideBy($node);
       $start = Opportunity::start($node);
-      $label = sprintf('#%d "%s" (%d of %d)', $nid, $node->label(), $count, $needed);
+      $label = sprintf('#%d "%s" (%d in, %d more needed)', $nid, $node->label(), $count, $short);
 
       if ($start && $start <= $now) {
         $log[] = "decline (date passed undecided): $label";
@@ -224,7 +308,9 @@ final class Decider {
         if (!$enough) {
           $log[] = "decline (short at decide-by): $label";
           if (!$dry_run) {
-            $this->decline($node, NULL, sprintf('Not enough volunteers by %s: %d of %d needed.', Opportunity::dateLabel($decide_by), $count, $needed));
+            $this->decline($node, NULL, Opportunity::hasSlots($node)
+              ? sprintf('Not enough volunteers by %s: %d more were needed to fill every time slot.', Opportunity::dateLabel($decide_by), $short)
+              : sprintf('Not enough volunteers by %s: %d of %d needed.', Opportunity::dateLabel($decide_by), $count, $needed));
           }
         }
         elseif (!$sent->has($nid . ':ready')) {
@@ -248,7 +334,51 @@ final class Decider {
       }
     }
 
-    // 2. Stale claims: private nudges for post-launch claims only.
+    // 2. Approved dated opportunities: the roster reminder two days out, and
+    // the thank-you once the last slot has ended.
+    $query = $storage->getQuery()->accessCheck(FALSE)
+      ->condition('type', 'task')
+      ->condition('field_task_type', [Opportunity::TYPE_SHIFT, Opportunity::TYPE_TABLING], 'IN')
+      ->condition('field_task_when.end_value', Opportunity::timestampToStorage($now - 3 * 86400), '>=');
+    $or = $query->orConditionGroup()
+      ->notExists('field_task_stage')
+      ->condition('field_task_stage', Opportunity::STAGE_APPROVED);
+    $query->condition($or);
+    foreach ($storage->loadMultiple($query->execute()) as $node) {
+      /** @var \Drupal\node\NodeInterface $node */
+      $nid = (int) $node->id();
+      $start = Opportunity::start($node);
+      $end = Opportunity::end($node);
+      if (!$start || !$this->signups->count($node)) {
+        continue;
+      }
+      $label = sprintf('#%d "%s"', $nid, $node->label());
+      // Keyed on the start, so moving the date re-arms the reminder.
+      $key = $nid . ':remind:' . $start;
+      if ($start > $now && $start - $now <= self::REMIND_DAYS * 86400 && !$sent->has($key)) {
+        $log[] = "roster reminder: $label";
+        if (!$dry_run) {
+          $this->notifier->rosterReminder($node);
+          $sent->set($key, $now);
+        }
+      }
+      if ($end && $end <= $now && !$sent->has($nid . ':thanks')) {
+        $log[] = "thank-you: $label";
+        if (!$dry_run) {
+          $earned = [];
+          $users = array_keys($this->signups->users($node));
+          foreach ($this->perks->owed(NULL, $now) as $row) {
+            if (in_array($row['uid'], $users, TRUE)) {
+              $earned[$row['uid']][] = Perks::label($row['perk']);
+            }
+          }
+          $this->notifier->thankYou($node, $earned);
+          $sent->set($nid . ':thanks', $now);
+        }
+      }
+    }
+
+    // 3. Stale claims: private nudges for post-launch claims only.
     $first = (int) ($this->settings()->get('stale_first_days') ?: 14);
     $second = (int) ($this->settings()->get('stale_second_days') ?: 28);
     foreach ($this->staleClaims($now)['post_launch'] as $row) {

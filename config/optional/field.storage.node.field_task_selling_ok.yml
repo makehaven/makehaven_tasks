@@ -2,17 +2,15 @@ langcode: en
 status: true
 dependencies:
   module:
-    - datetime_range
     - node
-id: node.field_task_when
-field_name: field_task_when
+id: node.field_task_selling_ok
+field_name: field_task_selling_ok
 entity_type: node
-type: daterange
-settings:
-  datetime_type: datetime
-module: datetime_range
+type: boolean
+settings: {  }
+module: core
 locked: false
-cardinality: -1
+cardinality: 1
 translatable: true
 indexes: {  }
 persist_with_no_fields: false

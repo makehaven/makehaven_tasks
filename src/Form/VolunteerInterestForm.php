@@ -12,10 +12,12 @@ use Drupal\node\NodeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
- * "I'm interested" (while gathering) or "Sign me up" (an approved shift).
+ * "I'm in": interest while gathering, or the roster of an approved shift.
  *
- * A note is optional ("Saturdays only", "I can bring a truck"). Signing up
- * writes one row to the sign-up table; the node itself is not re-saved.
+ * With several time slots, people tick the ones they can do (doing more than
+ * one is encouraged). A note is optional ("Saturdays only", "I can bring a
+ * truck"). Signing up writes rows to the sign-up table; the node itself is
+ * not re-saved.
  */
 final class VolunteerInterestForm extends FormBase {
 
@@ -54,13 +56,12 @@ final class VolunteerInterestForm extends FormBase {
     if ($account && ($denied = Opportunity::audienceDenied($node, $account))) {
       return $denied;
     }
-    $start = Opportunity::start($node);
-    if ($start && $start < \Drupal::time()->getCurrentTime()) {
+    $end = Opportunity::end($node);
+    if ($end && $end < \Drupal::time()->getCurrentTime()) {
       return (string) t('This date has passed.');
     }
-    $max = Opportunity::maxAllowed($node);
-    if ($max !== NULL && !$signups->has($node, $uid) && $signups->count($node) >= $max) {
-      return (string) t('It is full: @max people have already signed up.', ['@max' => $max]);
+    if (!$signups->has($node, $uid) && $signups->full($node)) {
+      return (string) t('It is full. Thank you for offering!');
     }
     return NULL;
   }
@@ -73,24 +74,15 @@ final class VolunteerInterestForm extends FormBase {
     $uid = (int) $this->currentUser()->id();
     $form_state->set('nid', (int) $node->id());
     $already = $this->signups->has($node, $uid);
-
-    $count = $this->signups->count($node);
-    $needed = Opportunity::minNeeded($node);
-    $max = Opportunity::maxAllowed($node);
-    $when = Opportunity::whenLabel($node);
-    $decide = Opportunity::dateLabel(Opportunity::decideBy($node));
     $gathering = Opportunity::isGathering($node);
+    $slots = Opportunity::slots($node);
 
     $summary = '<p class="vol-form-summary"><strong>' . htmlspecialchars((string) $node->label(), ENT_QUOTES) . '</strong>';
-    if ($when !== '') {
+    if (count($slots) === 1 && ($when = Opportunity::whenLabel($node)) !== '') {
       $summary .= '<br>' . htmlspecialchars($when, ENT_QUOTES);
     }
-    $summary .= '<br>' . $this->t('@count interested of @needed needed', ['@count' => $count, '@needed' => $needed]);
-    if ($max) {
-      $summary .= ' ' . $this->t('(room for @max)', ['@max' => $max]);
-    }
-    if ($gathering && $decide !== '') {
-      $summary .= '<br>' . $this->t('Staff decide by @date.', ['@date' => $decide]);
+    if ($gathering && ($decide = Opportunity::dateLabel(Opportunity::decideBy($node))) !== '') {
+      $summary .= '<br>' . $this->t('Sign up by @date; staff confirm once enough people are in.', ['@date' => $decide]);
     }
     $summary .= '</p>';
     $form['summary'] = ['#markup' => $summary];
@@ -101,16 +93,45 @@ final class VolunteerInterestForm extends FormBase {
       return $form;
     }
 
-    $form['intro'] = [
-      '#markup' => '<p>' . ($gathering
-        ? $this->t('Saying you are interested is not a promise. Staff approve it once enough people are in, and then you hear back by email.')
-        : $this->t('Add your name to the roster for this shift.')) . '</p>',
-    ];
+    if (count($slots) > 1) {
+      $counts = $this->signups->slotCounts($node);
+      $mine = $this->signups->userSlots($node, $uid);
+      $needed = Opportunity::minNeeded($node);
+      $max = Opportunity::maxAllowed($node);
+      $now = \Drupal::time()->getCurrentTime();
+      $options = [];
+      $disabled = [];
+      foreach ($slots as $start => $slot) {
+        $n = $counts[$start] ?? 0;
+        $state = $max !== NULL && $n >= $max ? $this->t('full') : ($n >= $needed ? $this->t('@n in', ['@n' => $n]) : $this->t('@n of @needed', ['@n' => $n, '@needed' => $needed]));
+        $options[$start] = Opportunity::slotLabel($slot['start'], $slot['end'], TRUE) . ' <span class="vol-slot-state">(' . $state . ')</span>';
+        if (!in_array($start, $mine, TRUE) && (($max !== NULL && $n >= $max) || $slot['end'] < $now)) {
+          $disabled[] = $start;
+        }
+      }
+      $form['slots'] = [
+        '#type' => 'checkboxes',
+        '#title' => $this->t('Which times can you do?'),
+        '#description' => $this->t('Pick as many as you like. Doing more than one is a big help.'),
+        '#options' => $options,
+        '#default_value' => $mine,
+      ];
+      foreach ($disabled as $start) {
+        $form['slots'][$start]['#disabled'] = TRUE;
+      }
+    }
+    else {
+      $form['intro'] = [
+        '#markup' => '<p>' . ($gathering
+          ? $this->t("Saying you're in is not a promise yet. Staff confirm it once enough people are in, and then you hear back by email.")
+          : $this->t('Add your name to the roster.')) . '</p>',
+      ];
+    }
     $form['note'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Anything to know? (optional)'),
       '#maxlength' => 255,
-      '#placeholder' => $this->t('e.g. Saturdays only, or I can bring a truck'),
+      '#placeholder' => $this->t('e.g. I can bring a truck, or I will show my lamp prototypes'),
     ];
     if ($already) {
       foreach ($this->signups->list($node) as $row) {
@@ -122,7 +143,7 @@ final class VolunteerInterestForm extends FormBase {
     $form['actions'] = ['#type' => 'actions'];
     $form['actions']['submit'] = [
       '#type' => 'submit',
-      '#value' => $already ? $this->t('Update my note') : ($gathering ? $this->t("I'm interested") : $this->t('Sign me up')),
+      '#value' => $already ? $this->t('Save') : $this->t("I'm in"),
       '#button_type' => 'primary',
       '#name' => 'join',
     ];
@@ -140,6 +161,20 @@ final class VolunteerInterestForm extends FormBase {
   }
 
   /**
+   * The slots ticked (or the single slot / 0 for an undated task).
+   *
+   * @return int[]
+   *   Slot starts.
+   */
+  private function chosenSlots(NodeInterface $node, FormStateInterface $form_state): array {
+    $slots = Opportunity::slots($node);
+    if (count($slots) > 1) {
+      return array_map('intval', array_keys(array_filter((array) $form_state->getValue('slots'))));
+    }
+    return $slots ? [(int) array_key_first($slots)] : [0];
+  }
+
+  /**
    * {@inheritdoc}
    */
   public function validateForm(array &$form, FormStateInterface $form_state): void {
@@ -151,6 +186,18 @@ final class VolunteerInterestForm extends FormBase {
     }
     if (!$this->signups->has($node, $uid) && ($reason = self::closedReason($node, $uid, $this->signups))) {
       $form_state->setErrorByName('note', $reason);
+      return;
+    }
+    $chosen = $this->chosenSlots($node, $form_state);
+    if (!$chosen) {
+      $form_state->setErrorByName('slots', $this->t('Tick at least one time, or use "Take my name off".'));
+      return;
+    }
+    $mine = $this->signups->userSlots($node, $uid);
+    foreach ($chosen as $slot) {
+      if ($slot && !in_array($slot, $mine, TRUE) && $this->signups->slotFull($node, $slot)) {
+        $form_state->setErrorByName('slots', $this->t('One of those times just filled up. Please pick another.'));
+      }
     }
   }
 
@@ -160,20 +207,20 @@ final class VolunteerInterestForm extends FormBase {
   public function submitForm(array &$form, FormStateInterface $form_state): void {
     $node = $this->loadNode($form_state);
     $uid = (int) $this->currentUser()->id();
+    $was_in = $this->signups->has($node, $uid);
     $kind = Opportunity::isGathering($node) ? SignupStore::KIND_INTEREST : SignupStore::KIND_CONFIRMED;
-    $added = $this->signups->add($node, $uid, (string) $form_state->getValue('note'), $kind);
-    if (!$added) {
-      $this->messenger()->addStatus($this->t('Note updated.'));
+    $this->signups->setSlots($node, $uid, $this->chosenSlots($node, $form_state), (string) $form_state->getValue('note'), $kind);
+    if ($was_in) {
+      $this->messenger()->addStatus($this->t('Saved.'));
     }
     elseif ($kind === SignupStore::KIND_CONFIRMED) {
-      $this->messenger()->addStatus($this->t("You're on the roster. Thank you!"));
+      $this->messenger()->addStatus($this->t("You're on the roster. Thank you! You'll get a reminder two days before."));
     }
     else {
-      $count = $this->signups->count($node);
-      $needed = Opportunity::minNeeded($node);
-      $this->messenger()->addStatus($count >= $needed
-        ? $this->t("Thanks! That makes @count of @needed needed, so staff can approve it. You'll get an email either way.", ['@count' => $count, '@needed' => $needed])
-        : $this->t("Thanks! @count of @needed so far. You'll get an email when staff decide.", ['@count' => $count, '@needed' => $needed]));
+      $short = $this->signups->stillNeeded($node);
+      $this->messenger()->addStatus($short === 0
+        ? $this->t("Thanks! That's enough people, so staff can confirm it. You'll get an email either way.")
+        : $this->t("Thanks! @short more needed. You'll get an email when staff decide.", ['@short' => $short]));
     }
     $form_state->setRedirectUrl($node->toUrl());
   }

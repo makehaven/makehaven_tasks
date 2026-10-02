@@ -1390,3 +1390,99 @@ article.node--type-task h1.title {
 .vol-overdue { font-size: 0.8rem; font-weight: 700; color: var(--mh-color-brand-primary, #8b1919); }
 .vol-meta { font-size: 0.85rem; color: var(--mh-color-neutral-600, #616161); }
 .vol-form-summary { font-size: 1rem; }
+
+/* ── Volunteer board phase 2 (2026-10): status pills, fill bar, "More" menu,
+   time slots, tabling details, thank-yous. ─────────────────────────────── */
+.vol-pill {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  margin: 0 0.3rem 0.2rem 0;
+  color: #0d0d0f;
+}
+.vol-pill--needs { background: var(--mh-color-accent-gold, #ffc658); }
+.vol-pill--ok, .vol-pill--on { background: #d6f0e2; color: var(--mh-color-success, #1f6f48); }
+.vol-pill--full { background: var(--mh-color-neutral-200, #e6e6e6); color: var(--mh-color-neutral-700, #4a4a4a); }
+.vol-chip--you { background: #fdeaea; color: var(--mh-color-brand-primary, #8b1919); }
+.vol-chip--new { background: #e3effa; color: #134a73; }
+.vol-chip--tabling { background: #ece6f7; color: #3f2a6b; }
+.vol-card--on { border-left-color: var(--mh-color-success, #1f8c5b); }
+.vol-card__fill { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.45rem; }
+.vol-fill {
+  flex: 1 1 auto;
+  height: 0.5rem;
+  background: var(--mh-color-neutral-200, #e6e6e6);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.vol-fill span { display: block; height: 100%; background: var(--mh-color-success, #1f8c5b); }
+.vol-fill__label { font-size: 0.82rem; color: var(--mh-color-neutral-600, #616161); white-space: nowrap; }
+.task-action-btn--done { background: #d6f0e2; color: var(--mh-color-success, #1f6f48); border-color: transparent; }
+.vol-you { font-size: 0.92rem; margin: 0 0 0.75rem; }
+.vol-perks { font-size: 0.88rem; color: var(--mh-color-neutral-700, #4a4a4a); margin: 0.6rem 0 0; }
+
+/* "More" menu on the toolbar. */
+.task-more { position: relative; display: inline-block; }
+.task-more > summary { list-style: none; cursor: pointer; }
+.task-more > summary::-webkit-details-marker { display: none; }
+.task-more__menu {
+  position: absolute;
+  right: 0;
+  z-index: 20;
+  min-width: min(18rem, 90vw);
+  margin-top: 0.3rem;
+  padding: 0.35rem 0;
+  background: var(--mh-color-surface, #fff);
+  border: 1px solid var(--mh-color-border, #d9d9d9);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+}
+.task-more__menu a {
+  display: block;
+  padding: 0.45rem 0.85rem;
+  color: inherit;
+  text-decoration: none;
+}
+.task-more__menu a:hover, .task-more__menu a:focus { background: var(--mh-color-neutral-100, #f4f4f4); }
+@media (max-width: 600px) {
+  .task-more__menu { right: auto; left: 0; }
+}
+
+/* Post form. */
+.vol-post-form .vol-slot-row,
+.vol-post-form .vol-people-row,
+.vol-post-form .vol-who-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1rem;
+  align-items: flex-end;
+}
+.vol-post-form .vol-slot-row .form-item { margin-top: 0.3rem; margin-bottom: 0.3rem; }
+.vol-post-form .form-radios .form-item { margin-bottom: 0.35rem; }
+.vol-slot-state { color: var(--mh-color-neutral-600, #616161); font-size: 0.88rem; }
+
+/* Task page: roster by slot, event details. */
+.vol-slots { margin: 0.4rem 0 0.2rem 1.1rem; padding: 0; font-size: 0.92rem; }
+.vol-slots li { margin-bottom: 0.15rem; }
+.vol-event {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 0.75rem;
+  margin: 0.75rem 0 0;
+  font-size: 0.92rem;
+}
+.vol-event dt { font-weight: 700; }
+.vol-event dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+  .vol-event { grid-template-columns: 1fr; }
+  .vol-event dd { margin-bottom: 0.35rem; }
+}
+
+/* Staff pages. */
+.vol-pool-filter { margin: 0 0 0.75rem; font-size: 0.9rem; line-height: 1.8; }
+.vol-pool-filter a.is-active { font-weight: 700; }
+.vol-pool-table, .vol-perks-table { display: block; overflow-x: auto; max-width: 100%; }
+.vol-perk-form { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+.vol-perk-form .form-item { margin: 0; }

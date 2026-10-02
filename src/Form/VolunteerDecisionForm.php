@@ -20,7 +20,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * approvals page, so the form id carries the nid.
  *
  * - Approve / Decline: makehaven_tasks.manage_tasks (staff).
- * - Put it out (proposed -> gathering) and Decline a draft:
+ * - Publish to the board (proposed -> gathering) and Decline a draft:
  *   makehaven_tasks.create_task (facilitators and staff).
  */
 final class VolunteerDecisionForm extends FormBase {
@@ -105,7 +105,7 @@ final class VolunteerDecisionForm extends FormBase {
     if ($stage === Opportunity::STAGE_PROPOSED && $can_release) {
       $form['buttons']['release'] = [
         '#type' => 'submit',
-        '#value' => $this->t('Put it out to gather interest'),
+        '#value' => $this->t('Publish to the board'),
         '#name' => 'release_' . $node->id(),
         '#button_type' => 'primary',
         '#submit' => ['::release'],
@@ -126,32 +126,62 @@ final class VolunteerDecisionForm extends FormBase {
   }
 
   /**
-   * "3 interested of 2 needed" plus names and notes.
+   * Who is in, per time slot, with their notes.
    */
   public static function summaryHtml(NodeInterface $node, SignupStore $signups): string {
-    $count = $signups->count($node);
+    $e = fn($t) => htmlspecialchars((string) $t, ENT_QUOTES);
     $needed = Opportunity::minNeeded($node);
     $max = Opportunity::maxAllowed($node);
-    $cls = $count >= $needed ? 'vol-count vol-count--ok' : 'vol-count vol-count--short';
-    $html = '<div class="vol-summary"><span class="' . $cls . '">'
-      . t('@count interested of @needed needed', ['@count' => $count, '@needed' => $needed])
-      . ($max ? ' ' . t('(max @max)', ['@max' => $max]) : '') . '</span>';
+    $short = $signups->stillNeeded($node);
+    $gathering = Opportunity::isGathering($node);
+    $people = $signups->list($node);
+
+    $headline = $short > 0
+      ? t('@n more needed', ['@n' => $short])
+      : ($gathering ? t('Enough people') : t('Every slot covered'));
+    $html = '<div class="vol-summary"><span class="vol-count ' . ($short > 0 ? 'vol-count--short' : 'vol-count--ok') . '">' . $headline . '</span>';
     $bits = [];
-    if (($when = Opportunity::whenLabel($node)) !== '') {
-      $bits[] = htmlspecialchars($when, ENT_QUOTES);
+    if (!Opportunity::hasSlots($node) && ($when = Opportunity::whenLabel($node)) !== '') {
+      $bits[] = $e($when);
     }
-    if ($decide = Opportunity::decideBy($node)) {
-      $bits[] = t('decide by @d', ['@d' => Opportunity::dateLabel($decide)]);
+    $bits[] = Opportunity::hasSlots($node)
+      ? t('@n per time slot', ['@n' => $needed]) . ($max ? ', ' . t('max @max', ['@max' => $max]) : '')
+      : t('@count of @needed', ['@count' => $signups->count($node), '@needed' => $needed]) . ($max ? ' ' . t('(max @max)', ['@max' => $max]) : '');
+    if ($gathering && ($decide = Opportunity::decideBy($node))) {
+      $bits[] = t('sign up by @d', ['@d' => Opportunity::dateLabel($decide)]);
     }
-    if ($bits) {
-      $html .= ' <span class="vol-meta">' . implode(' · ', $bits) . '</span>';
+    $html .= ' <span class="vol-meta">' . implode(' · ', $bits) . '</span>';
+
+    $slots = Opportunity::slots($node);
+    if (count($slots) > 1) {
+      $counts = $signups->slotCounts($node);
+      $html .= '<ul class="vol-slots">';
+      foreach ($slots as $start => $slot) {
+        $names = [];
+        foreach ($people as $row) {
+          if (in_array($start, $row['slots'], TRUE)) {
+            $names[] = $e($row['name']);
+          }
+        }
+        $n = $counts[$start] ?? 0;
+        $html .= '<li><strong>' . $e(Opportunity::slotLabel($slot['start'], $slot['end'], TRUE)) . '</strong> '
+          . '<span class="vol-count ' . ($n >= $needed ? 'vol-count--ok' : 'vol-count--short') . '">' . t('@n of @needed', ['@n' => $n, '@needed' => $needed]) . '</span>'
+          . ($names ? ': ' . implode(', ', $names) : '') . '</li>';
+      }
+      $html .= '</ul>';
+      $notes = array_filter($people, fn($row) => $row['note'] !== '');
+      if ($notes) {
+        $html .= '<ul class="vol-people">';
+        foreach ($notes as $row) {
+          $html .= '<li>' . $e($row['name']) . ': <em>' . $e($row['note']) . '</em></li>';
+        }
+        $html .= '</ul>';
+      }
     }
-    $rows = $signups->list($node);
-    if ($rows) {
+    elseif ($people) {
       $html .= '<ul class="vol-people">';
-      foreach ($rows as $row) {
-        $html .= '<li>' . htmlspecialchars($row['name'], ENT_QUOTES)
-          . ($row['note'] !== '' ? ': <em>' . htmlspecialchars($row['note'], ENT_QUOTES) . '</em>' : '') . '</li>';
+      foreach ($people as $row) {
+        $html .= '<li>' . $e($row['name']) . ($row['note'] !== '' ? ': <em>' . $e($row['note']) . '</em>' : '') . '</li>';
       }
       $html .= '</ul>';
     }

@@ -522,7 +522,7 @@ function makehaven_tasks_views_query_alter(ViewExecutable $view, $query) {
   // display adds gathering ones itself. Empty stage = approved.
   if (in_array($view->current_display, ['page_tasks_interactive', 'page_tasks_display'], TRUE) && Opportunity::fieldsInstalled()) {
     $query->addWhereExpression(0, "node_field_data.nid NOT IN (SELECT mh_st.entity_id FROM {node__field_task_stage} mh_st WHERE mh_st.deleted = 0 AND mh_st.field_task_stage_value <> 'approved')");
-    $query->addWhereExpression(0, "node_field_data.nid NOT IN (SELECT mh_ty.entity_id FROM {node__field_task_type} mh_ty WHERE mh_ty.deleted = 0 AND mh_ty.field_task_type_value = 'shift')");
+    $query->addWhereExpression(0, "node_field_data.nid NOT IN (SELECT mh_ty.entity_id FROM {node__field_task_type} mh_ty WHERE mh_ty.deleted = 0 AND mh_ty.field_task_type_value IN ('shift', 'tabling'))");
   }
   if ($view->current_display === 'page_tasks_interactive' && Opportunity::fieldsInstalled()) {
     _makehaven_tasks_apply_board_filters($query, BoardBuilder::filters(\Drupal::request()));
@@ -690,9 +690,14 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
   // Staff edit link — Gin hides the local task tabs; give staff an explicit
   // edit button so they don't need to hunt for the pencil icon.
   $edit_html = '';
-  if ($node->access('update')) {
+  $account = \Drupal::currentUser();
+  if (\Drupal\makehaven_tasks\Form\TaskRequestForm::editAccess($node, $account)->isAllowed()) {
+    $edit_url = \Drupal\Core\Url::fromRoute('makehaven_tasks.edit', ['node' => $nid])->toString();
+    $edit_html = '<a href="' . $edit_url . '" class="tap-btn tap-btn--edit">✏ ' . t('Edit') . '</a>';
+  }
+  elseif ($node->access('update')) {
     $edit_url = \Drupal\Core\Url::fromRoute('entity.node.edit_form', ['node' => $nid])->toString();
-    $edit_html = '<a href="' . $edit_url . '" class="tap-btn tap-btn--edit">✏ Edit task</a>';
+    $edit_html = '<a href="' . $edit_url . '" class="tap-btn tap-btn--edit">✏ ' . t('Edit task') . '</a>';
   }
 
   $build['task_toolbar'] = [
@@ -1001,7 +1006,7 @@ function _makehaven_tasks_volunteer_panel(array &$build, NodeInterface $node): v
   $banner = '';
   switch ($stage) {
     case Opportunity::STAGE_PROPOSED:
-      $banner = '<div class="vol-banner vol-banner--draft"><strong>' . t('Draft') . '</strong> ' . t('Not on the board yet. A facilitator or staff member puts it out to gather interest.') . '</div>';
+      $banner = '<div class="vol-banner vol-banner--draft"><strong>' . t('Draft') . '</strong> ' . t('Not on the board yet. A facilitator or staff member publishes it to open sign-ups.') . '</div>';
       break;
 
     case Opportunity::STAGE_GATHERING:
@@ -1025,17 +1030,62 @@ function _makehaven_tasks_volunteer_panel(array &$build, NodeInterface $node): v
     $can_join = in_array($stage, [Opportunity::STAGE_GATHERING, Opportunity::STAGE_APPROVED], TRUE);
     if ($can_join && $account->isAuthenticated()) {
       $interest_url = Url::fromRoute('makehaven_tasks.interest', ['node' => $node->id()])->toString();
-      $gathering = $stage === Opportunity::STAGE_GATHERING;
       if ($signups->has($node, $uid)) {
-        $html .= '<div class="tap-primary-row"><span class="tap-btn tap-btn--claimed">✓ ' . ($gathering ? t("You're interested") : t("You're on the roster")) . '</span>'
-          . ' <a class="tap-link" href="' . $interest_url . '">' . t('Change my note or take my name off') . '</a></div>';
+        $html .= '<div class="tap-primary-row"><span class="tap-btn tap-btn--claimed">✓ ' . t("You're in") . '</span>'
+          . ' <a class="tap-link" href="' . $interest_url . '">' . (Opportunity::hasSlots($node) ? t('Change my times or note, or take my name off') : t('Change my note or take my name off')) . '</a></div>';
       }
       elseif ($reason = \Drupal\makehaven_tasks\Form\VolunteerInterestForm::closedReason($node, $uid, $signups)) {
         $html .= '<div class="tap-primary-row"><span class="tap-btn tap-btn--claimed">' . $esc($reason) . '</span></div>';
       }
       else {
-        $html .= '<div class="tap-primary-row"><a class="tap-btn tap-btn--claim" href="' . $interest_url . '">' . ($gathering ? '🙋 ' . t("I'm interested") : '✋ ' . t('Sign me up')) . '</a></div>';
+        $html .= '<div class="tap-primary-row"><a class="tap-btn tap-btn--claim" href="' . $interest_url . '">🙋 ' . t("I'm in") . '</a></div>';
       }
+    }
+    elseif ($can_join) {
+      $login = Url::fromRoute('user.login', [], ['query' => ['destination' => $node->toUrl()->toString()]])->toString();
+      $html .= '<div class="tap-primary-row"><a class="tap-btn tap-btn--claim" href="' . $login . '">' . t('Log in to sign up') . '</a></div>';
+    }
+    if (Opportunity::isShift($node)) {
+      $html .= '<p class="vol-perks">🎁 ' . $esc(\Drupal::service('makehaven_tasks.volunteer_perks')->policyText()) . '</p>';
+    }
+  }
+
+  // Tabling: the event details everyone needs, and the organizer's contact
+  // and our status with them for staff and facilitators.
+  if (Opportunity::isTabling($node)) {
+    $rows = [];
+    if ($node->hasField('field_task_event_url') && !$node->get('field_task_event_url')->isEmpty()) {
+      $link = $node->get('field_task_event_url')->uri;
+      $rows[] = [t('Event'), '<a href="' . $esc($link) . '" rel="noopener" target="_blank">' . $esc(parse_url($link, PHP_URL_HOST) ?: $link) . '</a>'];
+    }
+    if ($node->hasField('field_task_bring') && !$node->get('field_task_bring')->isEmpty()) {
+      $rows[] = [t('Bring / know'), nl2br($esc($node->get('field_task_bring')->value))];
+    }
+    if ($node->hasField('field_task_selling_ok') && $node->get('field_task_selling_ok')->value) {
+      $rows[] = [t('Selling'), t('Volunteers may sell their own work at our table.')];
+    }
+    if ($account->hasPermission('makehaven_tasks.create_task')) {
+      if ($node->hasField('field_task_org_status') && !$node->get('field_task_org_status')->isEmpty()) {
+        $allowed = $node->get('field_task_org_status')->getFieldDefinition()->getFieldStorageDefinition()->getSetting('allowed_values');
+        $value = $node->get('field_task_org_status')->value;
+        $rows[] = [t('With the organizer'), $esc($allowed[$value] ?? $value)];
+      }
+      if ($node->hasField('field_task_rsvp_by') && !$node->get('field_task_rsvp_by')->isEmpty()) {
+        $rows[] = [t('RSVP by'), $esc(Opportunity::dateLabel(strtotime($node->get('field_task_rsvp_by')->value . ' 12:00')))];
+      }
+      if ($node->hasField('field_task_fee') && !$node->get('field_task_fee')->isEmpty() && (float) $node->get('field_task_fee')->value > 0) {
+        $rows[] = [t('Fee'), '$' . $esc(number_format((float) $node->get('field_task_fee')->value, 2))];
+      }
+      if ($node->hasField('field_task_organizer') && !$node->get('field_task_organizer')->isEmpty()) {
+        $rows[] = [t('Organizer'), nl2br($esc($node->get('field_task_organizer')->value))];
+      }
+    }
+    if ($rows) {
+      $html .= '<dl class="vol-event">';
+      foreach ($rows as [$label, $value]) {
+        $html .= '<dt>' . $label . '</dt><dd>' . $value . '</dd>';
+      }
+      $html .= '</dl>';
     }
   }
 
@@ -1738,33 +1788,43 @@ function makehaven_tasks_preprocess_views_view(&$variables) {
     return;
   }
 
-  // Single unified toolbar: nav links left, action buttons right.
-  $left = '';
-  $right = '';
-
-  // Left side — member navigation (daily-use links).
-  $left .= '<a href="' . \Drupal\Core\Url::fromRoute('makehaven_tasks.my_history')->toString() . '" class="task-nav-link">📋 My tasks</a>';
-  $left .= '<a href="' . \Drupal\Core\Url::fromRoute('makehaven_tasks.leaderboard')->toString() . '" class="task-nav-link">🏆 Leaderboard</a>';
-  if ($account->hasPermission('makehaven_tasks.create_from_bank')) {
-    $left .= '<a href="' . \Drupal\Core\Url::fromRoute('makehaven_tasks.bank')->toString() . '" class="task-nav-link">📦 Task bank</a>';
-  }
-
-  // Right side — action buttons (permission-gated).
-  $right .= '<a href="' . \Drupal\Core\Url::fromRoute('makehaven_tasks.request')->toString() . '" class="task-staff-btn">'
-    . ($account->hasPermission('makehaven_tasks.create_task') ? '📣 Post an opportunity' : '💡 Suggest an opportunity') . '</a>';
-  if ($account->hasPermission('makehaven_tasks.create_task') && Opportunity::fieldsInstalled()) {
+  // One toolbar: one way to post, Approvals when something waits, and the
+  // rest under "More" (Kate, 2026-10-01: too many buttons, too many ways to
+  // post). A <details> menu needs no JavaScript.
+  $url = fn(string $route, array $params = []) => \Drupal\Core\Url::fromRoute($route, $params)->toString();
+  $elevated = $account->hasPermission('makehaven_tasks.create_task');
+  $left = '<a href="' . $url('makehaven_tasks.request') . '" class="task-staff-btn task-staff-btn--primary">'
+    . ($elevated ? '+ ' . t('Post') : '💡 ' . t('Suggest something')) . '</a>';
+  if ($elevated && Opportunity::fieldsInstalled()) {
     $pending = (int) \Drupal::entityQuery('node')->accessCheck(FALSE)
       ->condition('type', 'task')
       ->condition('field_task_stage', [Opportunity::STAGE_PROPOSED, Opportunity::STAGE_GATHERING], 'IN')
       ->count()->execute();
-    $right .= '<a href="' . \Drupal\Core\Url::fromRoute('makehaven_tasks.approvals')->toString() . '" class="task-staff-btn">✅ Approvals' . ($pending ? ' (' . $pending . ')' : '') . '</a>';
+    $owed = count(\Drupal::service('makehaven_tasks.volunteer_perks')->owed());
+    if ($pending) {
+      $left .= '<a href="' . $url('makehaven_tasks.approvals') . '" class="task-staff-btn">✅ ' . t('Approvals (@n)', ['@n' => $pending]) . '</a>';
+    }
+    if ($owed) {
+      $left .= '<a href="' . $url('makehaven_tasks.perks') . '" class="task-staff-btn">🎁 ' . t('Thank-yous owed (@n)', ['@n' => $owed]) . '</a>';
+    }
   }
-  if ($account->hasPermission('makehaven_tasks.create_task')) {
-    $right .= '<a href="' . \Drupal\Core\Url::fromRoute('node.add', ['node_type' => 'task'])->toString() . '" class="task-staff-btn task-staff-btn--primary">+ Create task</a>';
+  $more = [];
+  $more[] = '<a href="' . $url('makehaven_tasks.my_history') . '">📋 ' . t('My tasks') . '</a>';
+  $more[] = '<a href="' . $url('makehaven_tasks.preferences') . '">🙋 ' . t('How I like to help') . '</a>';
+  if ($account->hasPermission('makehaven_tasks.create_from_bank')) {
+    $more[] = '<a href="' . $url('makehaven_tasks.bank') . '">📦 ' . t('Start a regular chore from the task bank') . '</a>';
+  }
+  $more[] = '<a href="' . $url('makehaven_tasks.retroactive_log') . '">✔ ' . t('Log something I already fixed') . '</a>';
+  $more[] = '<a href="' . $url('makehaven_tasks.leaderboard') . '">🏆 ' . t('Leaderboard') . '</a>';
+  if ($elevated) {
+    $more[] = '<a href="' . $url('makehaven_tasks.approvals') . '">✅ ' . t('Volunteer approvals') . '</a>';
+    $more[] = '<a href="' . $url('makehaven_tasks.perks') . '">🎁 ' . t('Volunteer thank-yous') . '</a>';
+    $more[] = '<a href="' . $url('makehaven_tasks.pool') . '">👥 ' . t('Volunteer pool') . '</a>';
   }
   if ($account->hasPermission('makehaven_tasks.manage_tasks')) {
-    $right .= '<a href="' . \Drupal\Core\Url::fromRoute('makehaven_tasks.manage')->toString() . '" class="task-staff-btn">⚙ Manager</a>';
+    $more[] = '<a href="' . $url('makehaven_tasks.manage') . '">⚙ ' . t('Task manager') . '</a>';
   }
+  $right = '<details class="task-more"><summary class="task-staff-btn">' . t('More') . ' ▾</summary><div class="task-more__menu">' . implode('', $more) . '</div></details>';
 
   $variables['header']['task_toolbar'] = [
     '#markup' => \Drupal\Core\Render\Markup::create(
@@ -1913,6 +1973,20 @@ function makehaven_tasks_preprocess_views_view_fields(&$variables) {
   if ($node->hasField('field_task_category') && !$node->get('field_task_category')->isEmpty()) {
     $cat = htmlspecialchars(ucfirst($node->get('field_task_category')->value), ENT_QUOTES, 'UTF-8');
     $badges .= '<span class="task-card-badge task-card-category">' . $cat . '</span>';
+  }
+
+  // Highlights: suits you, and new this week.
+  if (Opportunity::fieldsInstalled()) {
+    /** @var \Drupal\makehaven_tasks\Volunteer\BoardBuilder $board */
+    $board = \Drupal::service('makehaven_tasks.volunteer_board');
+    $highlight = '';
+    if ($board->isForYou($node, \Drupal::currentUser())) {
+      $highlight .= '<span class="vol-chip vol-chip--you">★ ' . t('For you') . '</span>';
+    }
+    if ($board->isNew($node)) {
+      $highlight .= '<span class="vol-chip vol-chip--new">' . t('New') . '</span>';
+    }
+    $badges = $highlight . $badges;
   }
 
   // Always inject badges (even if empty, so the action row still renders).

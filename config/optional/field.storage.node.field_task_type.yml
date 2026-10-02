@@ -16,6 +16,9 @@ settings:
     -
       value: shift
       label: 'Dated shift (needs people on a date)'
+    -
+      value: tabling
+      label: 'Tabling (representing MakeHaven at an outside event)'
   allowed_values_function: ''
 module: options
 locked: false

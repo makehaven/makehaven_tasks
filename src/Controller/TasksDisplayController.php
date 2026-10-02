@@ -603,8 +603,11 @@ HTML;
     $board = \Drupal::service('makehaven_tasks.volunteer_board');
     $signups = \Drupal::service('makehaven_tasks.volunteer_signups');
     $rows = '';
-    foreach ($board->gathering(['skill' => '', 'area' => ''], new \Drupal\Core\Session\AnonymousUserSession()) as $node) {
-      $need = max(0, \Drupal\makehaven_tasks\Volunteer\Opportunity::minNeeded($node) - $signups->count($node));
+    foreach ($board->opportunities(['skill' => '', 'area' => ''], new \Drupal\Core\Session\AnonymousUserSession()) as $node) {
+      $need = $signups->stillNeeded($node);
+      if ($need === 0) {
+        continue;
+      }
       $rows .= '<div class="views-row" data-need="' . $need . '"'
         . ' data-when="' . htmlspecialchars(\Drupal\makehaven_tasks\Volunteer\Opportunity::whenLabel($node), ENT_QUOTES) . '"'
         . ' data-decide="' . htmlspecialchars(\Drupal\makehaven_tasks\Volunteer\Opportunity::dateLabel(\Drupal\makehaven_tasks\Volunteer\Opportunity::decideBy($node)), ENT_QUOTES) . '">'
