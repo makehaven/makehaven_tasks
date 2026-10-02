@@ -56,7 +56,7 @@ class JobMessage {
       $lines[] = '*Contact:* ' . self::escape(implode(' · ', $contact));
     }
     if (!empty($o['link'])) {
-      $lines[] = '*Link:* ' . $o['link'];
+      $lines[] = '*Link:* ' . self::link((string) $o['link']);
     }
     if (!empty($o['url'])) {
       $lines[] = '<' . $o['url'] . '|Full posting on the website>';
@@ -120,6 +120,21 @@ class JobMessage {
       }
     }
     return FALSE;
+  }
+
+  /**
+   * Formats a requester-supplied URL as a Slack link they cannot relabel.
+   *
+   * Only http(s) is linked. '|' would start a custom label and '<' '>' would
+   * end or open a link, so they are percent-encoded (SEC-035).
+   */
+  public static function link(string $url): string {
+    $url = trim($url);
+    if (!preg_match('#^https?://#i', $url)) {
+      return self::escape($url);
+    }
+    $url = str_replace(['|', '<', '>', ' '], ['%7C', '%3C', '%3E', '%20'], $url);
+    return '<' . str_replace('&', '&amp;', $url) . '>';
   }
 
   /**

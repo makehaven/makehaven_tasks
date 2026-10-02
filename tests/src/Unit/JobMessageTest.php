@@ -77,4 +77,15 @@ class JobMessageTest extends TestCase {
     $this->assertStringStartsWith('New job board request', JobMessage::reviewAlert($o, 'https://x/q'));
   }
 
+  /**
+   * A requester's link cannot carry its own Slack label or a second link.
+   */
+  public function testLinkCannotBeRelabelled(): void {
+    $this->assertSame('<https://evil.example/?a=1%7CClick%20for%20prize%3E>', JobMessage::link('https://evil.example/?a=1|Click for prize>'));
+    $this->assertSame('<https://x.org/?a=1&amp;b=2>', JobMessage::link('https://x.org/?a=1&b=2'));
+    $this->assertSame('javascript:alert(1)', JobMessage::link('javascript:alert(1)'));
+    $text = JobMessage::jobsPost(['title' => 'X', 'link' => 'https://a.org/|label']);
+    $this->assertStringContainsString('*Link:* <https://a.org/%7Clabel>', $text);
+  }
+
 }

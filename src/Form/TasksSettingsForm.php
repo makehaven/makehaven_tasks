@@ -181,7 +181,7 @@ class TasksSettingsForm extends ConfigFormBase {
     $form['job_board']['job_board_trusted_senders'] = [
       '#type' => 'textarea',
       '#title' => $this->t('Trusted senders'),
-      '#description' => $this->t('One per line: an email address, or @domain.org for a whole organization. Their requests skip review and post right away. The form cannot prove who typed an address, so list only partners where a mistaken post would be harmless. Staff filling in the form for a caller always skip review.'),
+      '#description' => $this->t('One per line: an email address, or @domain.org for a whole organization. A request skips review and posts right away only when the person is signed in to a website account with that address; the email typed into the form is never trusted. Give a partner an account first. Staff filling in the form for a caller always skip review.'),
       '#default_value' => implode("\n", (array) ($config->get('job_board_trusted_senders') ?? [])),
     ];
 

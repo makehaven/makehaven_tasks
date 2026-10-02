@@ -76,8 +76,9 @@ class JobBoard {
   /**
    * Creates the posting for a completed submission.
    *
-   * Staff submitting on a caller's behalf, and trusted senders, are published
-   * straight away (which posts to Slack); everyone else waits for review.
+   * Staff submitting on a caller's behalf, and trusted senders signed in to
+   * their own account, are published straight away (which posts to Slack);
+   * everyone else waits for review.
    */
   public function createFromSubmission(WebformSubmissionInterface $submission): NodeInterface {
     $d = $submission->getData();
@@ -89,7 +90,10 @@ class JobBoard {
     if ($owner && $owner->isAuthenticated() && $owner->hasPermission('review job board')) {
       $source = 'staff';
     }
-    elseif (JobMessage::isTrusted($email, (array) $this->config()->get('job_board_trusted_senders'))) {
+    // Trust the signed-in account's address, never the typed one: the form
+    // is anonymous, so a typed address proves nothing (SEC-035).
+    elseif ($owner && $owner->isAuthenticated()
+      && JobMessage::isTrusted((string) $owner->getEmail(), (array) $this->config()->get('job_board_trusted_senders'))) {
       $source = 'trusted';
     }
 
@@ -321,7 +325,17 @@ class JobBoard {
     $items = [];
     $directory = 'private://job-attachments';
     \Drupal::service('file_system')->prepareDirectory($directory, FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS);
+    // The copy bypasses the destination field's validators, so apply its
+    // extension list here. Anything else (e.g. an SVG, which a private
+    // download would serve inline) stays only in the webform submission
+    // (SEC-026).
+    $allowed = $this->allowedAttachmentExtensions();
     foreach ($this->entityTypeManager->getStorage('file')->loadMultiple($fids) as $file) {
+      $extension = strtolower(pathinfo((string) $file->getFilename(), PATHINFO_EXTENSION));
+      if (!in_array($extension, $allowed, TRUE)) {
+        $this->loggerFactory->get('makehaven_tasks')->warning('Attachment @fid not copied to the job posting: .@ext is not allowed on field_job_attachment.', ['@fid' => $file->id(), '@ext' => $extension]);
+        continue;
+      }
       try {
         $copy = $repository->copy($file, $directory . '/' . $file->getFilename(), FileExists::Rename);
         $items[] = ['target_id' => $copy->id(), 'display' => 1];
@@ -331,6 +345,19 @@ class JobBoard {
       }
     }
     return $items;
+  }
+
+  /**
+   * Extensions field_job_attachment accepts, never including svg or xml.
+   *
+   * @return string[]
+   *   Lower-case extensions without dots.
+   */
+  public function allowedAttachmentExtensions(): array {
+    $definition = $this->entityTypeManager->getStorage('field_config')->load('node.job_posting.field_job_attachment');
+    $list = $definition ? (string) $definition->getSetting('file_extensions') : 'pdf';
+    $extensions = preg_split('/[\s,]+/', strtolower($list), -1, PREG_SPLIT_NO_EMPTY);
+    return array_values(array_diff($extensions, ['svg', 'svgz', 'xml', 'html', 'htm', 'xhtml']));
   }
 
   /**
