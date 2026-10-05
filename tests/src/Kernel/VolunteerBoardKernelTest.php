@@ -308,7 +308,7 @@ class VolunteerBoardKernelTest extends KernelTestBase {
 
     $now = \Drupal::time()->getCurrentTime();
     $this->decider()->tick($now + 13 * 86400);
-    $this->assertCount(0, $this->getMails(), 'Nothing before 14 idle days.');
+    $this->assertCount(0, $this->getMails(['key' => 'stale_claim']), 'No stale nudge before 14 idle days.');
 
     $this->decider()->tick($now + 15 * 86400);
     $this->decider()->tick($now + 16 * 86400);
@@ -324,6 +324,49 @@ class VolunteerBoardKernelTest extends KernelTestBase {
     $claims = $this->decider()->staleClaims($now + 29 * 86400);
     $this->assertSame([(int) $old_claim->id()], array_column($claims['pre_launch'], 'nid'), 'The old claim is on the staff cleanup list.');
     $this->assertSame([(int) $new_claim->id()], array_column($claims['post_launch'], 'nid'));
+  }
+
+  /**
+   * One "How's it going?" a week after a claim, staff copied, never repeated.
+   */
+  public function testClaimCheckIn(): void {
+    $this->config('makehaven_tasks.settings')->set('checkin_days', 7)->set('checkin_cc', 'staff@example.com')->save();
+    $task = $this->createTask();
+    $this->claimAs($this->alice, $task);
+    $old_claim = $this->createTask(['field_task_status' => 'in_progress', 'field_task_claimed_by' => $this->bob->id()]);
+    \Drupal::keyValue(Decider::CLAIMED_AT)->delete((string) $old_claim->id());
+    $shift = $this->createTask(['field_task_type' => 'shift', 'field_task_status' => 'in_progress', 'field_task_claimed_by' => $this->bob->id()]);
+    $this->resetOutbound();
+
+    $now = \Drupal::time()->getCurrentTime();
+    $this->decider()->tick($now + 6 * 86400);
+    $this->assertCount(0, $this->getMails(['key' => 'claim_checkin']), 'Nothing in the first week.');
+
+    $this->decider()->tick($now + 8 * 86400);
+    $this->decider()->tick($now + 9 * 86400);
+    $mails = $this->getMails(['key' => 'claim_checkin']);
+    $this->assertCount(1, $mails, 'One check-in per claim, however often cron runs.');
+    $this->assertSame('alice@example.com', $mails[0]['to']);
+    $this->assertSame('staff@example.com', $mails[0]['headers']['Cc'] ?? NULL, 'Staff are copied.');
+    $this->assertStringContainsString((string) $task->label(), $mails[0]['subject']);
+    $this->assertCount(0, array_filter($mails, fn($m) => $m['to'] === 'bob@example.com'), 'No check-in for a pre-launch claim or a dated shift.');
+    $this->assertSame([], RecordingSlackBot::$posts, 'Check-ins are never posted to Slack.');
+
+    // A claim already past its window when the feature arrives is left alone.
+    $late = $this->createTask();
+    $this->claimAs($this->bob, $late);
+    \Drupal::keyValue(Decider::CLAIMED_AT)->set((string) $late->id(), $now - 30 * 86400);
+    $this->assertSame([], array_column(array_filter($this->decider()->checkInsDue($now), fn($r) => $r['nid'] === (int) $late->id()), 'nid'), 'A 30-day-old claim gets no check-in.');
+
+    // Marked done: no check-in.
+    $done = $this->createTask();
+    $this->claimAs($this->alice, $done);
+    \Drupal::service('flag')->flag(Flag::load('task_completed'), Node::load($done->id()), $this->alice);
+    $this->assertSame([], array_filter($this->decider()->checkInsDue($now + 8 * 86400), fn($r) => $r['nid'] === (int) $done->id()), 'A completed task gets no check-in.');
+
+    // Off switch.
+    $this->config('makehaven_tasks.settings')->set('checkin_days', 0)->save();
+    $this->assertSame([], $this->decider()->checkInsDue($now + 8 * 86400));
   }
 
   // ── Who may post ───────────────────────────────────────────────────────────

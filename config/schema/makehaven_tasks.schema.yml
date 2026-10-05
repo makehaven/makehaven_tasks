@@ -26,6 +26,12 @@ makehaven_tasks.settings:
     stale_second_days:
       type: integer
       label: 'Days idle before the second stale-claim nudge'
+    checkin_days:
+      type: integer
+      label: 'Days after a claim before the one "How''s it going?" check-in (0 = off)'
+    checkin_cc:
+      type: string
+      label: 'Staff address copied on the claim check-in'
     perk_lunch_amount:
       type: integer
       label: 'Lunch thank-you, in dollars'

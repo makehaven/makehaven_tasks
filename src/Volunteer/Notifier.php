@@ -298,6 +298,27 @@ final class Notifier {
     ])));
   }
 
+  /**
+   * A week after a claim: a friendly check-in to the lead, staff copied.
+   *
+   * Unlike the stale nudges this one is not private: staff asked to see who
+   * has been checked on (Kate, ledger #45792), so the configured staff
+   * address (checkin_cc, default the "ready to approve" address) is on Cc.
+   */
+  public function checkIn(NodeInterface $node, UserInterface $lead, int $claim_days): void {
+    $settings = $this->configFactory->get('makehaven_tasks.settings');
+    $cc = trim((string) ($settings->get('checkin_cc') ?? $settings->get('ready_to_approve_email')));
+    $handoff = $this->absolute('makehaven_tasks.handoff', ['node' => $node->id()]);
+    $this->mailUser($lead, 'claim_checkin', sprintf('How\'s it going? "%s"', $node->label()), implode("\n\n", [
+      sprintf('Hi %s,', $lead->getDisplayName()),
+      sprintf('You picked up "%s" on the volunteer board %d days ago. Thank you! We are just checking in to see how it is going.', $node->label(), $claim_days),
+      '- All done? Mark it done on the task page so it comes off the board: ' . $this->url($node),
+      '- Still working on it? No need to do anything. If something is in the way (a part, a tool, a question), just reply to this email; staff are copied.',
+      '- Turned out not to fit your time? Hand it off, with a note for whoever picks it up next: ' . $handoff,
+      'Thanks for helping keep MakeHaven running.',
+    ]), $cc !== '' ? ['cc' => $cc] : []);
+  }
+
   // -- transports ---------------------------------------------------------------
 
   /**
@@ -323,8 +344,19 @@ final class Notifier {
 
   /**
    * Emails one person.
+   *
+   * @param \Drupal\user\UserInterface $user
+   *   The recipient.
+   * @param string $key
+   *   The mail key (makehaven_tasks_mail()).
+   * @param string $subject
+   *   The subject.
+   * @param string $body
+   *   The plain-text body.
+   * @param array $extra
+   *   Extra mail params; 'cc' adds a Cc header (see makehaven_tasks_mail()).
    */
-  public function mailUser(UserInterface $user, string $key, string $subject, string $body): void {
+  public function mailUser(UserInterface $user, string $key, string $subject, string $body, array $extra = []): void {
     $to = $user->getEmail();
     if (!$to) {
       return;
@@ -332,7 +364,7 @@ final class Notifier {
     $this->mailManager->mail('makehaven_tasks', $key, $to, $user->getPreferredLangcode(), [
       'subject' => $subject,
       'body' => $body,
-    ], NULL, TRUE);
+    ] + $extra, NULL, TRUE);
   }
 
   /**

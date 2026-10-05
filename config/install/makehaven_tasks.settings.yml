@@ -6,6 +6,8 @@ short_reminder_days: 3
 member_suggestion_stage: 'gathering'
 stale_first_days: 14
 stale_second_days: 28
+checkin_days: 7
+checkin_cc: 'staff@makehaven.org'
 perk_lunch_amount: 15
 perk_lunch_hours: 3
 perk_hoodie_dates: 5

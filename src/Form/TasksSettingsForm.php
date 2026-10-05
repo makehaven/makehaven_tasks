@@ -94,6 +94,20 @@ class TasksSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('stale_second_days') ?? 28,
     ];
 
+    $form['volunteer']['checkin_days'] = [
+      '#type' => 'number',
+      '#title' => $this->t('"How’s it going?" email to whoever claimed a task, after (days)'),
+      '#description' => $this->t('One friendly check-in per claim, counted from the day it was claimed, if the task is not marked done. Sent within a week of falling due, so older claims are left to the stale-claim emails. 0 turns it off.'),
+      '#min' => 0,
+      '#default_value' => $config->get('checkin_days') ?? 7,
+    ];
+    $form['volunteer']['checkin_cc'] = [
+      '#type' => 'email',
+      '#title' => $this->t('Staff copied on the check-in'),
+      '#description' => $this->t('Leave empty to send it to the volunteer only.'),
+      '#default_value' => $config->get('checkin_cc') ?? $config->get('ready_to_approve_email'),
+    ];
+
     $form['volunteer']['outreach_slack_channel'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Tabling summary Slack channel'),
@@ -201,6 +215,8 @@ class TasksSettingsForm extends ConfigFormBase {
       ->set('member_suggestion_stage', (string) $form_state->getValue('member_suggestion_stage'))
       ->set('stale_first_days', (int) $form_state->getValue('stale_first_days'))
       ->set('stale_second_days', (int) $form_state->getValue('stale_second_days'))
+      ->set('checkin_days', (int) $form_state->getValue('checkin_days'))
+      ->set('checkin_cc', trim((string) $form_state->getValue('checkin_cc')))
       ->set('outreach_slack_channel', ($c = trim((string) $form_state->getValue('outreach_slack_channel'))) !== '' ? '#' . ltrim($c, '#') : '')
       ->set('perk_lunch_amount', (int) $form_state->getValue('perk_lunch_amount'))
       ->set('perk_lunch_hours', (float) $form_state->getValue('perk_lunch_hours'))

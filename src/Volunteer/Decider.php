@@ -25,6 +25,8 @@ use Drupal\user\UserInterface;
  *  - decide-by passed and short: declined, email to the interested only;
  *  - decide-by passed with enough: one "ready to approve" email, no auto-approve;
  *  - short and decide-by close: one "needs N more" recruitment post;
+ *  - a week after a claim: one "How's it going?" email to the lead, staff
+ *    copied (post-launch claims only, and only within a week of falling due);
  *  - stale claims: private nudges to the lead at 14 and 28 idle days, only for
  *    claims made after launch (a claim time is recorded from launch onward;
  *    claims without one are listed for staff cleanup and never emailed).
@@ -53,6 +55,13 @@ final class Decider {
    * Days before the first slot that the roster reminder goes out.
    */
   public const REMIND_DAYS = 2;
+
+  /**
+   * Days after a claim's check-in falls due that it may still go out.
+   *
+   * Covers a cron outage; past it the claim is left to the stale nudges.
+   */
+  public const CHECKIN_WINDOW_DAYS = 7;
 
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
@@ -378,7 +387,22 @@ final class Decider {
       }
     }
 
-    // 3. Stale claims: private nudges for post-launch claims only.
+    // 3. One "How's it going?" check-in a week after a claim (Kate, ledger
+    // #45792: tasks got claimed and then sat). Counted from the claim, not
+    // from idleness; copies staff; once per claim.
+    foreach ($this->checkInsDue($now) as $row) {
+      $key = sprintf('%d:checkin:%d', $row['nid'], $row['claimed_at']);
+      if ($sent->has($key)) {
+        continue;
+      }
+      $log[] = sprintf('check-in to %s: #%d "%s" (claimed %d days ago)', $row['lead']->getDisplayName(), $row['nid'], $row['node']->label(), $row['claim_days']);
+      if (!$dry_run) {
+        $this->notifier->checkIn($row['node'], $row['lead'], $row['claim_days']);
+        $sent->set($key, $now);
+      }
+    }
+
+    // 4. Stale claims: private nudges for post-launch claims only.
     $first = (int) ($this->settings()->get('stale_first_days') ?: 14);
     $second = (int) ($this->settings()->get('stale_second_days') ?: 28);
     foreach ($this->staleClaims($now)['post_launch'] as $row) {
@@ -401,6 +425,41 @@ final class Decider {
       $this->loggerFactory->get('makehaven_tasks')->notice('Volunteer board tick: @lines', ['@lines' => implode('; ', $log)]);
     }
     return $log;
+  }
+
+  /**
+   * Claims due their one "How's it going?" check-in.
+   *
+   * Due once the claim is checkin_days old (default 7; 0 turns it off) and
+   * only for a week after that (CHECKIN_WINDOW_DAYS). The window is what
+   * keeps the first run from mailing old claims: anything claimed more than
+   * two weeks ago is past it, and is the stale-claim nudges' business. Claims
+   * without a recorded claim time (made before the board launched) are never
+   * emailed, as for the stale nudges. Dated shifts are skipped: their people
+   * are a roster with a date, not a lead with an open-ended job.
+   *
+   * @return array
+   *   Rows as staleClaims() returns, plus claim_days, with a lead.
+   */
+  public function checkInsDue(?int $now = NULL): array {
+    $now ??= $this->time->getCurrentTime();
+    $days = (int) ($this->settings()->get('checkin_days') ?? 7);
+    if ($days <= 0) {
+      return [];
+    }
+    $due = [];
+    foreach ($this->staleClaims($now)['post_launch'] as $row) {
+      if (!$row['lead'] || Opportunity::isShift($row['node'])) {
+        continue;
+      }
+      $age = $now - (int) $row['claimed_at'];
+      if ($age < $days * 86400 || $age >= ($days + self::CHECKIN_WINDOW_DAYS) * 86400) {
+        continue;
+      }
+      $row['claim_days'] = (int) floor($age / 86400);
+      $due[] = $row;
+    }
+    return $due;
   }
 
   /**

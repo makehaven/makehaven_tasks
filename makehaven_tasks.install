@@ -801,3 +801,27 @@ function makehaven_tasks_update_9011() {
   $reason->save();
   return t('Added store inventory reason "Volunteer appreciation".');
 }
+
+/**
+ * Claim check-in: "How's it going?" a week after a task is claimed.
+ *
+ * Adds checkin_days (7) and checkin_cc (the "ready to approve" address,
+ * staff@makehaven.org) to makehaven_tasks.settings. No mail is sent here, and
+ * the first cron after it only mails claims between 7 and 14 days old.
+ */
+function makehaven_tasks_update_9012() {
+  $config = \Drupal::configFactory()->getEditable('makehaven_tasks.settings');
+  $set = [];
+  if ($config->get('checkin_days') === NULL) {
+    $config->set('checkin_days', 7);
+    $set[] = 'checkin_days';
+  }
+  if ($config->get('checkin_cc') === NULL) {
+    $config->set('checkin_cc', (string) ($config->get('ready_to_approve_email') ?: 'staff@makehaven.org'));
+    $set[] = 'checkin_cc';
+  }
+  if ($set) {
+    $config->save();
+  }
+  return t('Claim check-in: @set.', ['@set' => $set ? 'set ' . implode(', ', $set) : 'settings already present']);
+}

@@ -2490,4 +2490,7 @@ function _makehaven_tasks_write_maintenance_log(\Drupal\flag\FlaggingInterface $
 function makehaven_tasks_mail($key, &$message, $params) {
   $message['subject'] = (string) ($params['subject'] ?? 'MakeHaven volunteer board');
   $message['body'][] = (string) ($params['body'] ?? '');
+  if (!empty($params['cc'])) {
+    $message['headers']['Cc'] = (string) $params['cc'];
+  }
 }
