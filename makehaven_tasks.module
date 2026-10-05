@@ -797,6 +797,10 @@ function makehaven_tasks_node_view(array &$build, NodeInterface $node, $display,
       unset($build[$field]);
     }
   }
+  // The picture speaks for itself; a "Task Image" heading above it is noise.
+  if (isset($build['field_task_image'])) {
+    $build['field_task_image']['#label_display'] = 'hidden';
+  }
 
   // Rich equipment card — replace the bare link with an image+name+area
   // mini-card so members can spot the tool at a glance from the task page.

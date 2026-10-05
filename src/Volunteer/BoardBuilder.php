@@ -8,6 +8,8 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Url;
+use Drupal\file\FileInterface;
+use Drupal\image\ImageStyleInterface;
 use Drupal\node\NodeInterface;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -279,13 +281,39 @@ final class BoardBuilder {
       $action = '<a class="task-action-btn" href="' . Url::fromRoute('user.login', [], ['query' => ['destination' => $url]])->toString() . '">' . t('Log in to sign up') . '</a>';
     }
 
-    return '<article class="vol-card' . ($gathering ? ' vol-card--gathering' : ' vol-card--on') . '">'
+    $picture = $this->pictureHtml($node);
+    return '<article class="vol-card' . ($gathering ? ' vol-card--gathering' : ' vol-card--on') . ($picture !== '' ? ' vol-card--has-picture' : '') . '">'
+      . $picture
       . '<div class="vol-card__chips">' . $chips . '</div>'
       . '<h3 class="vol-card__title"><a href="' . $url . '">' . $e($node->label()) . '</a></h3>'
       . ($when !== '' ? '<div class="vol-card__meta">🗓 ' . $e($when) . '</div>' : '')
       . '<div class="vol-card__fill">' . $bar . '</div>'
       . ($action ? '<div class="task-card-actions">' . $action . '</div>' : '')
       . '</article>';
+  }
+
+  /**
+   * The task's own picture as a card banner, or '' when it has none.
+   *
+   * Only the poster's picture (field_task_image): the ongoing-task cards also
+   * fall back to the tool's photo, but an opportunity card without a picture
+   * reads fine as it is.
+   */
+  private function pictureHtml(NodeInterface $node): string {
+    if (!$node->hasField('field_task_image') || $node->get('field_task_image')->isEmpty()) {
+      return '';
+    }
+    $file = $node->get('field_task_image')->entity;
+    if (!$file instanceof FileInterface) {
+      return '';
+    }
+    $uri = $file->getFileUri();
+    $style = $this->entityTypeManager->hasDefinition('image_style') ? $this->entityTypeManager->getStorage('image_style')->load('large') : NULL;
+    $src = $style instanceof ImageStyleInterface
+      ? $style->buildUrl($uri)
+      : \Drupal::service('file_url_generator')->generateString($uri);
+    return '<a class="vol-card__picture" href="' . $node->toUrl()->toString() . '" tabindex="-1" aria-hidden="true">'
+      . '<img src="' . htmlspecialchars($src, ENT_QUOTES) . '" alt="" loading="lazy"></a>';
   }
 
   /**

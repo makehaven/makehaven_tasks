@@ -1486,3 +1486,29 @@ article.node--type-task h1.title {
 .vol-pool-table, .vol-perks-table { display: block; overflow-x: auto; max-width: 100%; }
 .vol-perk-form { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
 .vol-perk-form .form-item { margin: 0; }
+
+/* Opportunity card picture (ledger #45793): the poster's photo as a banner
+   across the top of the card, edge to edge inside the border. */
+.vol-card--has-picture { padding-top: 0; overflow: hidden; }
+.vol-card__picture {
+  display: block;
+  margin: 0 -0.9rem 0.6rem;
+  aspect-ratio: 16 / 9;
+  background: var(--mh-color-surface-muted, #f8f9fa);
+}
+.vol-card__picture img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Task page picture: a reference, not a poster. */
+.field--name-field-task-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 480px;
+  width: auto;
+  height: auto;
+  border-radius: 8px;
+}

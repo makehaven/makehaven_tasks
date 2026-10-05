@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\makehaven_tasks\Form;
 
+use Drupal\Component\Utility\Bytes;
+use Drupal\Component\Utility\Environment;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
@@ -175,6 +177,13 @@ final class TaskRequestForm extends FormBase {
       '#default_value' => $editing ? trim(strip_tags((string) $node->get('body')->value)) : '',
       '#description' => $this->t('What the work is and anything a volunteer should know.'),
     ];
+
+    // A picture (Kate, ledger #45793): earlier posts had one, and it helps
+    // as a reference and breaks up the board. Stored in field_task_image,
+    // the same field the board's card thumbnails and the task page show.
+    if ($image = $this->imageElement($editing ? $node : NULL)) {
+      $form['image'] = $image;
+    }
 
     // 3. When.
     if ($fields) {
@@ -549,6 +558,10 @@ final class TaskRequestForm extends FormBase {
     $node->setTitle(trim((string) $form_state->getValue('title')));
     $set('body', ['value' => trim((string) $form_state->getValue('details')), 'format' => 'plain_text']);
     $set('field_task_equipment', ($equipment = $form_state->getValue('equipment')) ? ['target_id' => (int) $equipment] : NULL);
+    if (isset($form['image']) && $node->hasField('field_task_image')) {
+      $fid = (int) (((array) $form_state->getValue('image'))[0] ?? 0);
+      $set('field_task_image', $fid ? ['target_id' => $fid, 'alt' => $node->getTitle()] : NULL);
+    }
 
     if ($kind === self::KIND_REPEATING && $elevated) {
       $set('field_task_frequency', (string) $form_state->getValue('frequency'));
@@ -711,6 +724,51 @@ final class TaskRequestForm extends FormBase {
       }
     }
     return $out;
+  }
+
+  /**
+   * The optional picture upload, or NULL when the task has no image field.
+   *
+   * Validation follows the field's own settings (extensions, size limits;
+   * a photo larger than the field's maximum is scaled down), so a picture
+   * posted here is one the node form would also accept. No SVG: the field
+   * does not allow it, and an uploaded SVG is served inline (SEC-026).
+   */
+  private function imageElement(?NodeInterface $node): ?array {
+    $definitions = \Drupal::service('entity_field.manager')->getFieldDefinitions('node', 'task');
+    $field = $definitions['field_task_image'] ?? NULL;
+    if (!$field) {
+      return NULL;
+    }
+    $settings = $field->getSettings();
+    $extensions = (string) ($settings['file_extensions'] ?? '') ?: 'png gif jpg jpeg webp';
+    $validators = [
+      'FileExtension' => ['extensions' => $extensions],
+      'FileIsImage' => [],
+      'FileImageDimensions' => [
+        'maxDimensions' => (string) ($settings['max_resolution'] ?? ''),
+        'minDimensions' => (string) ($settings['min_resolution'] ?? ''),
+      ],
+    ];
+    $max = trim((string) ($settings['max_filesize'] ?? ''));
+    $validators['FileSizeLimit'] = ['fileLimit' => $max !== '' ? Bytes::toNumber($max) : Environment::getUploadMaxSize()];
+
+    $default = [];
+    if ($node && $node->hasField('field_task_image') && !$node->get('field_task_image')->isEmpty()) {
+      $default = [(int) $node->get('field_task_image')->target_id];
+    }
+    return [
+      '#type' => 'managed_file',
+      '#title' => $this->t('Picture (optional)'),
+      '#description' => $this->t('A photo of the tool, the spot, or what it should look like when done. It shows on the board and the task page. @types.', [
+        '@types' => strtoupper(str_replace(' ', ', ', $extensions)),
+      ]),
+      '#upload_location' => 'public://tasks/' . date('Y') . '/' . date('m'),
+      '#upload_validators' => $validators,
+      '#accept' => 'image/*',
+      '#multiple' => FALSE,
+      '#default_value' => $default,
+    ];
   }
 
   /**
