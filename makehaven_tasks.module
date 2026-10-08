@@ -168,6 +168,10 @@ function makehaven_tasks_form_node_form_alter(array &$form, \Drupal\Core\Form\Fo
     return;
   }
   $node = $form_object->getEntity();
+  if ($node instanceof NodeInterface && $node->bundle() === 'job_posting') {
+    _makehaven_tasks_job_posting_form_alter($form, $form_state, $node);
+    return;
+  }
   if (!$node instanceof NodeInterface || $node->bundle() !== 'task') {
     return;
   }
@@ -429,6 +433,10 @@ function _makehaven_tasks_task_image_mobile_capture(array &$element, \Drupal\Cor
  * Notify the task lead when a new published task node is created.
  */
 function makehaven_tasks_node_insert(NodeInterface $node) {
+  if ($node->bundle() === 'job_posting') {
+    _makehaven_tasks_job_posting_insert($node);
+    return;
+  }
   if ($node->bundle() === 'task' && $node->isPublished()) {
     _makehaven_tasks_notify_lead_due($node);
   }
@@ -702,6 +710,74 @@ function _makehaven_tasks_job_posting_presave(NodeInterface $node): void {
     return;
   }
   $job_board->postToSlack($node);
+}
+
+/**
+ * Job board: a posting created already published (node/add) is posted now.
+ *
+ * Presave can't post it: a new node has no ID yet, so the Slack message
+ * would have no link. Posting here and saving again stores the message ts;
+ * that second save's presave sees the ts and does nothing.
+ */
+function _makehaven_tasks_job_posting_insert(NodeInterface $node): void {
+  if (!$node->isPublished() || !$node->get('field_job_slack_ts')->isEmpty()) {
+    return;
+  }
+  $job_board = \Drupal::service('makehaven_tasks.job_board');
+  if (!$job_board->isIntake($node)) {
+    return;
+  }
+  if ($job_board->postToSlack($node)) {
+    $node->setNewRevision(FALSE);
+    $node->save();
+  }
+}
+
+/**
+ * Job board: tells staff saving a posting whether it reached Slack.
+ */
+function _makehaven_tasks_job_posting_form_alter(array &$form, \Drupal\Core\Form\FormStateInterface $form_state, NodeInterface $node): void {
+  if (!\Drupal::currentUser()->hasPermission('review job board') || !isset($form['actions']['submit']['#submit'])) {
+    return;
+  }
+  // The form's entity is cloned on submit, so this one still holds the
+  // state from before the save.
+  $form_state->set('makehaven_job_before', [
+    'new' => $node->isNew(),
+    'published' => !$node->isNew() && $node->isPublished(),
+    'posted' => !$node->get('field_job_slack_ts')->isEmpty(),
+  ]);
+  $form['actions']['submit']['#submit'][] = '_makehaven_tasks_job_posting_form_submit';
+}
+
+/**
+ * Submit handler (after save): reports the Slack outcome of this save.
+ */
+function _makehaven_tasks_job_posting_form_submit(array &$form, \Drupal\Core\Form\FormStateInterface $form_state): void {
+  $node = $form_state->getFormObject()->getEntity();
+  $before = (array) $form_state->get('makehaven_job_before');
+  if (!$node instanceof NodeInterface || !$node->isPublished() || !empty($before['posted'])) {
+    return;
+  }
+  $messenger = \Drupal::messenger();
+  $job_board = \Drupal::service('makehaven_tasks.job_board');
+  if (!$job_board->isIntake($node)) {
+    // MakeHaven's own public hiring pages; say so once, when it goes up.
+    if (!empty($before['new']) || empty($before['published'])) {
+      $messenger->addStatus(t('Not posted to Slack: with no Source this is a public MakeHaven page. To post it to #jobs, set Source (the posting then becomes members-only).'));
+    }
+    return;
+  }
+  if (!$node->get('field_job_slack_ts')->isEmpty()) {
+    $messenger->addStatus(t('Posted to Slack #jobs.'));
+    return;
+  }
+  $queue = Url::fromRoute('makehaven_tasks.job_board')->toString();
+  if (!\Drupal::config('makehaven_tasks.settings')->get('job_board_post_to_slack')) {
+    $messenger->addWarning(t('Not posted to Slack: posting is turned off in the Tasks settings (Job board).'));
+    return;
+  }
+  $messenger->addWarning(t('Not posted to Slack: Slack refused it (the reason is in the site log, type makehaven_tasks). Retry with "Post to Slack" on <a href=":queue">the job board</a>.', [':queue' => $queue]));
 }
 
 /**
