@@ -123,8 +123,7 @@ class TaskPersonalHistoryController extends ControllerBase {
     }
     else {
       $build['completed_empty'] = [
-        '#markup' => '<p>No completed tasks yet. <a href="' . $log_url
-          . '">Log something you already fixed</a>.</p>',
+        '#markup' => '<p>No completed tasks yet.</p>',
         '#weight' => 3,
       ];
     }
