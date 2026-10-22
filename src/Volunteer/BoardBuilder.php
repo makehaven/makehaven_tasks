@@ -104,7 +104,7 @@ final class BoardBuilder {
   }
 
   /**
-   * Approved dated shifts that have not ended, soonest first.
+   * Approved dated shifts and tabling that have not ended, soonest first.
    *
    * @return \Drupal\node\NodeInterface[]
    *   The shifts.
@@ -114,7 +114,7 @@ final class BoardBuilder {
     $query = $storage->getQuery()->accessCheck(TRUE)
       ->condition('type', 'task')
       ->condition('status', 1)
-      ->condition('field_task_type', Opportunity::TYPE_SHIFT)
+      ->condition('field_task_type', [Opportunity::TYPE_SHIFT, Opportunity::TYPE_TABLING], 'IN')
       ->condition('field_task_when.end_value', Opportunity::timestampToStorage($this->time->getCurrentTime()), '>=')
       ->sort('field_task_when.value');
     $or = $query->orConditionGroup()
