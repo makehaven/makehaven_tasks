@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\makehaven_tasks\Form;
 
+use Drupal\Component\Utility\Html;
 use Drupal\Component\Utility\Bytes;
 use Drupal\Component\Utility\Environment;
 use Drupal\Core\Access\AccessResult;
@@ -13,6 +14,7 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Url;
 use Drupal\makehaven_tasks\Volunteer\Decider;
 use Drupal\makehaven_tasks\Volunteer\Opportunity;
+use Drupal\makehaven_tasks\Volunteer\SignupStore;
 use Drupal\node\Entity\Node;
 use Drupal\node\NodeInterface;
 
@@ -130,6 +132,38 @@ final class TaskRequestForm extends FormBase {
         '#markup' => '<p class="vol-help">' . $this->t('Editing "@title" (@stage).', ['@title' => $node->label(), '@stage' => $this->stageLabel(Opportunity::stage($node))])
         . ($account->hasPermission('administer nodes') ? ' <a href="' . $node->toUrl('edit-form', ['query' => ['advanced' => 1]])->toString() . '">' . $this->t('Advanced editor') . '</a>' : '') . '</p>',
       ];
+    }
+
+    // Editing: say whether the newsletter carries this post, and let staff
+    // announce one they forgot to announce when they created it. The create
+    // form's "Also announce it" checkbox used to be the only chance.
+    if ($editing && $fields && \Drupal::hasService('makehaven_tasks.volunteer_signups')) {
+      $verdict = \Drupal::service('makehaven_tasks.volunteer_signups')->newsletterVerdict($node);
+      $announced = SignupStore::announcementNoticeId($node) !== NULL;
+      $can_announce = $elevated && $node->isPublished() && !$announced
+        && \Drupal::hasService('makerspace_digest_scheduler.notice_writer')
+        && \Drupal::service('makehaven_tasks.volunteer_signups')->wantsPeople($node);
+      $text = $verdict['reason'];
+      if ($announced) {
+        $text .= ' ' . (\Drupal::service('makehaven_tasks.volunteer_signups')->wantsPeople($node)
+          ? $this->t('It was announced in member news, and that notice runs in the newsletter while it is live.')
+          : $this->t('It was announced in member news; that notice no longer runs in the newsletter.'));
+      }
+      elseif ($can_announce) {
+        $text .= ' ' . $this->t('To put it in front of members, tick "Announce it in member news" below.');
+      }
+      $form['newsletter_status'] = [
+        '#type' => 'container',
+        '#attributes' => ['class' => ['messages', ($verdict['listed'] || $announced) ? 'messages--status' : 'messages--warning']],
+        'text' => ['#markup' => Html::escape((string) $text)],
+      ];
+      if ($can_announce) {
+        $form['announce_now'] = [
+          '#type' => 'checkbox',
+          '#title' => $this->t('Announce it in member news'),
+          '#description' => $this->t('Creates a notice when you save: Slack #members right away, then the next weekly digest. It cannot be unsent.'),
+        ];
+      }
     }
 
     // 1. Kind.
@@ -642,6 +676,18 @@ final class TaskRequestForm extends FormBase {
     }
     else {
       $node->save();
+      // Announcing an existing post: the checkbox is only offered to staff
+      // on a published post with no notice yet, and is re-checked here.
+      if ($editing && $elevated && $form_state->getValue('announce_now') && $node->isPublished()
+        && SignupStore::announcementNoticeId($node) === NULL) {
+        $notice = \Drupal::service('makehaven_tasks.volunteer_decider')->announce($node);
+        if ($notice) {
+          $this->messenger()->addStatus($this->t('Announced in member news. It is in Slack #members now and in the next weekly digest.'));
+        }
+        else {
+          $this->messenger()->addWarning($this->t('The task was saved, but the announcement could not be created.'));
+        }
+      }
     }
 
     if (!$editing && $fields && !$elevated && $form_state->getValue('count_me_in') && !Opportunity::isApproved($node)) {

@@ -38,6 +38,61 @@ final class Opportunity {
   public const TYPE_TABLING = 'tabling';
 
   /**
+   * Whether a task is in the newsletter's "Lend a hand" list, and why.
+   *
+   * The newsletter lists what the volunteer board lists (gathering interest,
+   * or an approved shift/tabling that has not ended) while it still wants
+   * people. Staff could not tell from the edit form which side of that line a
+   * task was on, so the same verdict drives the form's status line and the
+   * newsletter. Pure: every fact is passed in.
+   *
+   * @param array $facts
+   *   - published (bool)
+   *   - stage (string): the raw field value, '' when empty.
+   *   - dated (bool): a shift or tabling.
+   *   - ended (bool): its last slot is over (dated only).
+   *   - full (bool): every slot is at its maximum.
+   *   - enough (bool): every slot has its minimum.
+   *   - decide_by (int|null): timestamp.
+   *   - now (int): timestamp.
+   *
+   * @return array{listed: bool, reason: string}
+   *   The reason is a plain sentence for staff.
+   */
+  public static function newsletterVerdict(array $facts): array {
+    $no = static fn(string $reason): array => ['listed' => FALSE, 'reason' => $reason];
+    $stage = (string) ($facts['stage'] ?? '');
+    $dated = !empty($facts['dated']);
+
+    if (empty($facts['published'])) {
+      return $no('Not in the weekly newsletter: this task is not published.');
+    }
+    if ($stage === self::STAGE_GATHERING) {
+      if (!empty($facts['full'])) {
+        return $no('Not in the weekly newsletter: it has all the people it can take.');
+      }
+      $decideBy = $facts['decide_by'] ?? NULL;
+      if (!empty($facts['enough']) && $decideBy !== NULL && (int) $decideBy <= (int) ($facts['now'] ?? 0)) {
+        return $no('Not in the weekly newsletter: it has the people it asked for and its decide-by date has passed. Approve it, or move the decide-by date later to keep recruiting.');
+      }
+      return ['listed' => TRUE, 'reason' => 'In the weekly newsletter under "Lend a hand" while it is gathering interest and still has room.'];
+    }
+    if ($dated && in_array($stage, ['', self::STAGE_APPROVED], TRUE)) {
+      if (!empty($facts['ended'])) {
+        return $no('Not in the weekly newsletter: its date has passed.');
+      }
+      if (!empty($facts['full'])) {
+        return $no('Not in the weekly newsletter: it has all the people it can take.');
+      }
+      return ['listed' => TRUE, 'reason' => 'In the weekly newsletter under "Lend a hand" until its date passes or it fills.'];
+    }
+    if (in_array($stage, ['', self::STAGE_APPROVED], TRUE)) {
+      return $no('Not under "Lend a hand" in the weekly newsletter: that list carries posts gathering interest and upcoming shifts, and this is a task people can simply claim.');
+    }
+    return $no('Not in the weekly newsletter: only posts gathering interest, and approved shifts or tabling, are listed.');
+  }
+
+  /**
    * The stage; empty reads as approved.
    */
   public static function stage(NodeInterface $node): string {

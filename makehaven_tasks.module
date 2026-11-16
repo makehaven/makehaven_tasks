@@ -314,6 +314,24 @@ function makehaven_tasks_form_node_form_alter(array &$form, \Drupal\Core\Form\Fo
   // ── 8. Volunteer opportunity fields ─────────────────────────────────────
   if (Opportunity::fieldsInstalled() && isset($form['field_task_stage'])) {
     $open = !$node->get('field_task_stage')->isEmpty() || Opportunity::isShift($node);
+    // Say plainly whether this task is in the newsletter and what would put
+    // it there. Staff were looking for a checkbox that only exists as the
+    // Stage choice inside a collapsed section.
+    if (!$node->isNew() && \Drupal::hasService('makehaven_tasks.volunteer_signups')) {
+      $verdict = \Drupal::service('makehaven_tasks.volunteer_signups')->newsletterVerdict($node);
+      $form['newsletter_status'] = [
+        '#type' => 'container',
+        '#weight' => -100,
+        '#attributes' => ['class' => ['messages', $verdict['listed'] ? 'messages--status' : 'messages--warning']],
+        'text' => ['#markup' => t('@reason', ['@reason' => $verdict['reason']])
+          . ($node->get('field_task_stage')->isEmpty() && !Opportunity::isShift($node)
+            ? ' ' . t('To list it there, set Stage to "Gathering interest" in the Volunteer opportunity section below.')
+            : ''),
+        ],
+      ];
+      // An existing task that is not listed opens the section that fixes it.
+      $open = $open || !$verdict['listed'];
+    }
     $form['volunteer_opportunity'] = [
       '#type' => 'details',
       '#title' => t('Volunteer opportunity: kind, date, headcount, approval'),

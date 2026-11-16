@@ -232,6 +232,66 @@ final class SignupStore {
   }
 
   /**
+   * Whether the newsletter lists this task, and why. See Opportunity.
+   *
+   * @return array{listed: bool, reason: string}
+   *   The verdict.
+   */
+  public function newsletterVerdict(NodeInterface $node): array {
+    $now = $this->time->getCurrentTime();
+    $end = Opportunity::end($node);
+    $stage = $node->hasField('field_task_stage') && !$node->get('field_task_stage')->isEmpty()
+      ? (string) $node->get('field_task_stage')->value
+      : '';
+    return Opportunity::newsletterVerdict([
+      'published' => $node->isPublished(),
+      'stage' => $stage,
+      'dated' => Opportunity::isShift($node),
+      'ended' => $end !== NULL && $end < $now,
+      'full' => $this->full($node),
+      'enough' => $this->enough($node),
+      'decide_by' => Opportunity::decideBy($node),
+      'now' => $now,
+    ]);
+  }
+
+  /**
+   * Whether a post still wants people, wherever it is advertised.
+   *
+   * Narrower than newsletterVerdict(): a task people simply claim is not in
+   * "Lend a hand" but its announcement notice should keep running. This only
+   * says no when the post is withdrawn, over, full, or has the people it
+   * asked for and is past its decide-by date.
+   */
+  public function wantsPeople(NodeInterface $node): bool {
+    if (!$node->isPublished() || $this->full($node)) {
+      return FALSE;
+    }
+    $stage = Opportunity::stage($node);
+    if (in_array($stage, [Opportunity::STAGE_DECLINED, Opportunity::STAGE_CANCELLED], TRUE)) {
+      return FALSE;
+    }
+    $now = $this->time->getCurrentTime();
+    $end = Opportunity::end($node);
+    if (Opportunity::isShift($node) && $end !== NULL && $end < $now) {
+      return FALSE;
+    }
+    $decideBy = Opportunity::decideBy($node);
+    return !($stage === Opportunity::STAGE_GATHERING && $this->enough($node) && $decideBy !== NULL && $decideBy <= $now);
+  }
+
+  /**
+   * The notice that announces this task in member news, if one was raised.
+   *
+   * @return int|null
+   *   The notice's node id.
+   */
+  public static function announcementNoticeId(NodeInterface $node): ?int {
+    $id = \Drupal::keyValue('makerspace_digest_scheduler.notice_keys')->get('volunteer_board:task:' . $node->id());
+    return $id ? (int) $id : NULL;
+  }
+
+  /**
    * Whether a slot is at its cap.
    */
   public function slotFull(NodeInterface $node, int $slot): bool {
