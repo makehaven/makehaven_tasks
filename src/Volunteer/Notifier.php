@@ -143,9 +143,9 @@ final class Notifier {
       $perks = $earned[$uid] ?? [];
       $this->mailUser($user, 'volunteer_thanks', sprintf('Thank you for volunteering: %s', $node->label()), implode("\n\n", array_filter([
         sprintf('Hi %s,', $user->getDisplayName()),
-        sprintf('Thank you for helping with "%s". It makes a real difference.', $node->label()),
+        sprintf('Thank you for helping with "%s".', $node->label()),
         $perks ? 'You have earned: ' . implode(', ', $perks) . '. Staff have been told and will get it to you.' : '',
-        'Didn\'t make it after all? No problem; please let a staff member know so the thank-yous stay right.',
+        'If you did not make it, please tell a staff member.',
         'More ways to help: ' . $this->boardUrl(),
       ])));
       $sent++;
@@ -289,12 +289,11 @@ final class Notifier {
       : sprintf('Still on it? "%s"', $node->label());
     $this->mailUser($lead, 'stale_claim', $subject, implode("\n\n", array_filter([
       sprintf('Hi %s,', $lead->getDisplayName()),
-      sprintf('You claimed "%s" and it has not changed in %d days. No pressure, just checking which of these fits:', $node->label(), $idle_days),
+      sprintf('You claimed "%s" and it has not changed in %d days. Which of these fits?', $node->label(), $idle_days),
       '- Done? Mark it done on the task page: ' . $this->url($node),
       '- Stuck or out of time? Hand it off (with a note for whoever picks it up): ' . $handoff,
-      '- Still on it? Nothing to do; this is the only reminder until it has been idle a while longer.',
+      '- Still on it? No action needed.',
       $level >= 2 ? 'Staff will see it on the stale-claims list from now on and may check in.' : '',
-      'Nobody will take it away from you automatically.',
     ])));
   }
 
@@ -311,9 +310,9 @@ final class Notifier {
     $handoff = $this->absolute('makehaven_tasks.handoff', ['node' => $node->id()]);
     $this->mailUser($lead, 'claim_checkin', sprintf('How\'s it going? "%s"', $node->label()), implode("\n\n", [
       sprintf('Hi %s,', $lead->getDisplayName()),
-      sprintf('You picked up "%s" on the volunteer board %d days ago. Thank you! We are just checking in to see how it is going.', $node->label(), $claim_days),
+      sprintf('You picked up "%s" on the volunteer board %d days ago. How is it going?', $node->label(), $claim_days),
       '- All done? Mark it done on the task page so it comes off the board: ' . $this->url($node),
-      '- Still working on it? No need to do anything. If something is in the way (a part, a tool, a question), just reply to this email; staff are copied.',
+      '- Still working on it? No action needed. If you need a part, a tool or an answer, reply to this email; staff are copied.',
       '- Turned out not to fit your time? Hand it off, with a note for whoever picks it up next: ' . $handoff,
       'Thanks for helping keep MakeHaven running.',
     ]), $cc !== '' ? ['cc' => $cc] : []);

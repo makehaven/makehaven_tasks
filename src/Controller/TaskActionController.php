@@ -149,7 +149,7 @@ class TaskActionController extends ControllerBase {
     }
 
     if ($claimed_by === $uid) {
-      $this->messenger()->addStatus($this->t("You're the lead on this task — no need to offer help to yourself."));
+      $this->messenger()->addStatus($this->t('You are already the lead on this task.'));
       return new RedirectResponse($node_url);
     }
 
