@@ -251,9 +251,12 @@ final class Decider {
       $summary = rtrim(mb_substr($summary, 0, 277)) . '…';
     }
     $url = $node->toUrl('canonical', ['absolute' => TRUE])->toString();
+    // The t-shirt / lunch / hoodie thank-you is for tabling and outreach only
+    // (Kate 11-23), so other posts do not promise it.
+    $perks = Opportunity::isTabling($node) ? ' ' . htmlspecialchars($this->perks->policyText(), ENT_QUOTES) : '';
     $body = '<p>' . htmlspecialchars($summary, ENT_QUOTES) . '</p>'
       . ($when !== '' ? '<p><strong>' . htmlspecialchars($when, ENT_QUOTES) . '</strong></p>' : '')
-      . '<p><a href="' . htmlspecialchars($url, ENT_QUOTES) . '">' . t('Sign up on the volunteer board') . '</a>. ' . htmlspecialchars($this->perks->policyText(), ENT_QUOTES) . '</p>';
+      . '<p><a href="' . htmlspecialchars($url, ENT_QUOTES) . '">' . t('Sign up on the volunteer board') . '</a>.' . $perks . '</p>';
     $notice = \Drupal::service('makerspace_digest_scheduler.notice_writer')->create(
       (string) t('Volunteers wanted: @title', ['@title' => $node->label()]),
       $body,

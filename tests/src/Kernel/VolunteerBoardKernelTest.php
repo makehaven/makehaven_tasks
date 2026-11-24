@@ -610,6 +610,53 @@ class VolunteerBoardKernelTest extends KernelTestBase {
     $this->assertCount(1, $this->getMails(['key' => 'volunteer_match']), 'Once per opportunity.');
   }
 
+  /**
+   * A task marked done stops wanting people, so its newsletter notice drops
+   * out (task 47230, 11-23: done, still in the weekly).
+   */
+  public function testDoneTaskNoLongerWantsPeople(): void {
+    $task = $this->createTask();
+    $this->assertTrue($this->signups()->wantsPeople($task));
+    $this->assertFalse($this->signups()->isDone($task));
+
+    \Drupal::service('flag')->flag(Flag::load('task_completed'), $task, $this->staff);
+    $this->assertTrue($this->signups()->isDone($task));
+    // The status field is left as it was: completion is the flag alone.
+    $this->assertSame('open', $task->get('field_task_status')->value);
+    $this->assertFalse($this->signups()->wantsPeople($task), 'A done task keeps no notice running.');
+  }
+
+  /**
+   * The t-shirt / lunch / hoodie thank-you rides only on tabling notices.
+   */
+  public function testPerksOnlyOnTablingNotices(): void {
+    $writer = new class {
+      public array $bodies = [];
+
+      public function create(string $title, string $body, array $options = []) {
+        $this->bodies[$title] = $body;
+        return NULL;
+      }
+
+    };
+    $this->container->set('makerspace_digest_scheduler.notice_writer', $writer);
+    $policy = \Drupal::service('makehaven_tasks.volunteer_perks')->policyText();
+    $this->assertNotSame('', $policy);
+
+    if (!FieldStorageConfig::loadByName('node', 'body')) {
+      FieldStorageConfig::create(['field_name' => 'body', 'entity_type' => 'node', 'type' => 'text_with_summary'])->save();
+    }
+    FieldConfig::create(['field_name' => 'body', 'entity_type' => 'node', 'bundle' => 'task', 'label' => 'Body'])->save();
+    $this->decider()->announce($this->createTask(['title' => 'Tidy the chill space']));
+    $this->decider()->announce($this->createSlotted(['field_task_type' => 'tabling', 'title' => 'Library fair']));
+
+    $tidy = $writer->bodies['Volunteers wanted: Tidy the chill space'];
+    $fair = $writer->bodies['Volunteers wanted: Library fair'];
+    $this->assertStringContainsString('Sign up on the volunteer board', $tidy);
+    $this->assertStringNotContainsString(htmlspecialchars($policy, ENT_QUOTES), $tidy);
+    $this->assertStringContainsString(htmlspecialchars($policy, ENT_QUOTES), $fair);
+  }
+
   protected function submitRequest(array $values): NodeInterface {
     $form = TaskRequestForm::create($this->container);
     $form_state = (new FormState())->setValues($values + ['kind' => 'task', 'min' => 1, 'count_me_in' => 1]);

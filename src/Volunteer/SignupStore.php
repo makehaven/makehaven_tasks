@@ -260,11 +260,11 @@ final class SignupStore {
    *
    * Narrower than newsletterVerdict(): a task people simply claim is not in
    * "Lend a hand" but its announcement notice should keep running. This only
-   * says no when the post is withdrawn, over, full, or has the people it
-   * asked for and is past its decide-by date.
+   * says no when the post is withdrawn, done, over, full, or has the people
+   * it asked for and is past its decide-by date.
    */
   public function wantsPeople(NodeInterface $node): bool {
-    if (!$node->isPublished() || $this->full($node)) {
+    if (!$node->isPublished() || $this->isDone($node) || $this->full($node)) {
       return FALSE;
     }
     $stage = Opportunity::stage($node);
@@ -278,6 +278,25 @@ final class SignupStore {
     }
     $decideBy = Opportunity::decideBy($node);
     return !($stage === Opportunity::STAGE_GATHERING && $this->enough($node) && $decideBy !== NULL && $decideBy <= $now);
+  }
+
+  /**
+   * Whether the task is marked done.
+   *
+   * Completion is the task_completed flag; field_task_status stays
+   * "in_progress" after Mark done (task 47230, 11-23: done, still announced).
+   */
+  public function isDone(NodeInterface $node): bool {
+    if (!$node->id() || !$this->database->schema()->tableExists('flagging')) {
+      return FALSE;
+    }
+    return (bool) $this->database->select('flagging', 'f')
+      ->condition('flag_id', 'task_completed')
+      ->condition('entity_type', 'node')
+      ->condition('entity_id', $node->id())
+      ->countQuery()
+      ->execute()
+      ->fetchField();
   }
 
   /**
